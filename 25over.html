@@ -60,7 +60,7 @@
          },
          methods: {    // ajax request
              async getData() {
-                 const response = await fetch('tickets1.json')
+                 const response = await fetch('./tickets1.json')
                  this.tickets = await response.json()
                  //tickets = data.filter( (item) => item.major == majSelect ); 
                  this.tickets = this.tickets.filter(item => (item.actual_speed - item.posted_speed) > 25);
@@ -74,4 +74,5 @@
        
 
 </script>
+
 </body></html>
