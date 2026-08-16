@@ -41,7 +41,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
-	define( 'UACF_VERSION', '2.0.0' );
+	define( 'UACF_VERSION', '2.1.0' );
 }
 
 if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
@@ -498,7 +498,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 			$available         = self::get_available_post_types();
 			$post_type_object  = isset( $available[ $post_type ] ) ? $available[ $post_type ] : null;
-			$context            = array(
+			$context           = array(
 				'mode'             => 'create',
 				'post_id'          => 0,
 				'post'             => null,
@@ -506,28 +506,28 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				'error'            => '',
 			);
 
+			// Single exit point below (no repeated cache-and-return per
+			// branch): every branch only ever sets $context, never returns
+			// early.
 			if ( ! $post_type_object ) {
 				$context['error'] = __( 'The selected content type does not exist or is not available.', 'uacf' );
-				self::$edit_context_cache[ $post_type ] = $context;
-				return $context;
-			}
-
-			$edit_id = isset( $_GET['edit_id'] ) ? absint( wp_unslash( $_GET['edit_id'] ) ) : 0;
-
-			if ( $edit_id > 0 ) {
-				$post = self::validate_edit_id( $edit_id, $post_type );
-				if ( ! $post ) {
-					$context['error'] = __( 'The record you are trying to edit does not exist, does not belong to this form, or you do not have permission to edit it.', 'uacf' );
-					self::$edit_context_cache[ $post_type ] = $context;
-					return $context;
-				}
-				$context['mode']    = 'edit';
-				$context['post_id'] = $post->ID;
-				$context['post']    = $post;
 			} else {
-				$can_create = ! empty( $post_type_object->cap->create_posts ) && current_user_can( $post_type_object->cap->create_posts );
-				if ( ! $can_create ) {
-					$context['error'] = __( 'You do not have permission to create this content type.', 'uacf' );
+				$edit_id = isset( $_GET['edit_id'] ) ? absint( wp_unslash( $_GET['edit_id'] ) ) : 0;
+
+				if ( $edit_id > 0 ) {
+					$post = self::validate_edit_id( $edit_id, $post_type );
+					if ( $post ) {
+						$context['mode']    = 'edit';
+						$context['post_id'] = $post->ID;
+						$context['post']    = $post;
+					} else {
+						$context['error'] = __( 'The record you are trying to edit does not exist, does not belong to this form, or you do not have permission to edit it.', 'uacf' );
+					}
+				} else {
+					$can_create = ! empty( $post_type_object->cap->create_posts ) && current_user_can( $post_type_object->cap->create_posts );
+					if ( ! $can_create ) {
+						$context['error'] = __( 'You do not have permission to create this content type.', 'uacf' );
+					}
 				}
 			}
 
@@ -803,7 +803,45 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			self::sanitize_submitted_acf_data( $post_type );
 
 			$post_type_object = self::get_available_post_types()[ $post_type ];
-			$created_new_post = false;
+
+			// Required-fields-present check (create mode only — see
+			// find_missing_required_fields() docblock for why edit mode is
+			// exempt). ACF's own validation only ever looks at keys that
+			// ARE present in $_POST['acf']; it has no way to notice a
+			// required field whose Universal ACF Field block was never
+			// added to the form at all, so this system must catch that
+			// case itself, BEFORE anything is created.
+			if ( 'create' === $mode ) {
+				$missing_required = self::find_missing_required_fields( $post_type );
+				if ( ! empty( $missing_required ) ) {
+					foreach ( $missing_required as $missing_field ) {
+						self::$submission_errors[] = sprintf(
+							/* translators: %s: field label. */
+							__( 'The form is missing the required field "%s".', 'uacf' ),
+							$missing_field['label']
+						);
+					}
+					return;
+				}
+			}
+
+			// ACF's own real validation, for exactly the (whitelisted) keys
+			// present in $_POST['acf'] — no invented API, and no post has
+			// been created yet: this mirrors ACF's own internal order when
+			// acf_form() is used with a 'new_post' config (validate first,
+			// only create the post once validation has already passed).
+			if ( ! acf_validate_save_post( false ) ) {
+				$errors = function_exists( 'acf_get_validation_errors' ) ? acf_get_validation_errors() : array();
+				foreach ( (array) $errors as $error ) {
+					if ( ! empty( $error['message'] ) ) {
+						self::$submission_errors[] = wp_strip_all_tags( $error['message'] );
+					}
+				}
+				if ( empty( self::$submission_errors ) ) {
+					self::$submission_errors[] = __( 'One or more fields are invalid. Please review the form.', 'uacf' );
+				}
+				return; // Nothing was created — there is nothing to roll back.
+			}
 
 			if ( 'edit' === $mode ) {
 				$post_id = isset( $_POST['uacf_edit_id'] ) ? absint( wp_unslash( $_POST['uacf_edit_id'] ) ) : 0;
@@ -823,33 +861,56 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 					self::$submission_errors[] = __( 'The record could not be created. Please try again.', 'uacf' );
 					return;
 				}
-				$created_new_post = true;
-			}
-
-			// ACF's own real validation, for exactly the (whitelisted) keys
-			// present in $_POST['acf'] — no invented API.
-			if ( ! acf_validate_save_post( false ) ) {
-				if ( $created_new_post ) {
-					wp_delete_post( $post_id, true );
-				}
-				$errors = function_exists( 'acf_get_validation_errors' ) ? acf_get_validation_errors() : array();
-				foreach ( (array) $errors as $error ) {
-					if ( ! empty( $error['message'] ) ) {
-						self::$submission_errors[] = wp_strip_all_tags( $error['message'] );
-					}
-				}
-				if ( empty( self::$submission_errors ) ) {
-					self::$submission_errors[] = __( 'One or more fields are invalid. Please review the form.', 'uacf' );
-				}
-				return;
 			}
 
 			// ACF's own real save — the same core function acf_form() itself
-			// calls, so it fires 'acf/save_post' exactly as always.
+			// calls, so it fires 'acf/save_post' exactly as always (this is
+			// where finalize_save_post() completes code/title/taxonomies).
 			acf_save_post( $post_id );
 
 			wp_safe_redirect( self::build_redirect_url( $post_type, $post_id ) );
 			exit;
+		}
+
+		/**
+		 * Required ACF fields (top-level, for the given CPT) whose Field Key
+		 * is entirely absent from $_POST['acf'] — i.e. no Universal ACF
+		 * Field block was placed for them at all. ACF's own
+		 * acf_validate_save_post() cannot catch this by itself: it only
+		 * validates keys that WERE submitted.
+		 *
+		 * Two exceptions, matching ACF's/this system's own semantics:
+		 *   - a "_code" text field: server-generated, never expected in the
+		 *     submission (adjust_code_field() already marks it non-required
+		 *     on the front-end for the same reason);
+		 *   - a field with conditional_logic configured: whether it's
+		 *     currently required depends on other submitted values, and
+		 *     re-evaluating ACF's own conditional logic engine server-side
+		 *     is out of scope here (documented limitation) — such a field
+		 *     is still validated by ACF itself whenever it IS present.
+		 *
+		 * @return array List of the missing field definitions.
+		 */
+		private static function find_missing_required_fields( $post_type ) {
+			$missing   = array();
+			$submitted = ( isset( $_POST['acf'] ) && is_array( $_POST['acf'] ) ) ? $_POST['acf'] : array();
+
+			foreach ( self::get_fields_for_post_type( $post_type ) as $field ) {
+				if ( empty( $field['required'] ) || empty( $field['key'] ) ) {
+					continue;
+				}
+				if ( ! empty( $field['name'] ) && 'text' === $field['type'] && '_code' === substr( $field['name'], -5 ) ) {
+					continue;
+				}
+				if ( ! empty( $field['conditional_logic'] ) ) {
+					continue;
+				}
+				if ( ! array_key_exists( $field['key'], $submitted ) ) {
+					$missing[] = $field;
+				}
+			}
+
+			return $missing;
 		}
 
 		// =====================================================================
@@ -863,6 +924,10 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				esc_attr( $type ),
 				wp_kses_post( $message )
 			);
+		}
+
+		private static function has_submission_errors() {
+			return ! empty( self::$submission_errors );
 		}
 
 		private static function render_messages_markup() {
@@ -1009,7 +1074,21 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			$edit_context = self::resolve_edit_context( $post_type );
 			$post_id      = ( 'edit' === $edit_context['mode'] ) ? $edit_context['post_id'] : 0;
 
-			if ( $post_id > 0 && function_exists( 'acf_get_value' ) ) {
+			if ( self::has_submission_errors() && array_key_exists( $field['key'], (array) ( $_POST['acf'] ?? array() ) ) ) {
+				// A submission was attempted and rejected THIS request (see
+				// process_submission()): redisplay exactly what the user
+				// submitted so a validation error never wipes the form.
+				// Passed through as-is (only wp_unslash(), no
+				// sanitize_text_field() or similar) because ACF's own value
+				// shape varies by type — arrays for
+				// Checkbox/Relationship/Post Object/Select(multiple), an
+				// attachment ID for Image/File, etc. — and mangling that
+				// shape here would break acf_render_field_wrap() for those
+				// types. ACF re-validates/sanitizes again on the next submit
+				// regardless; nothing is persisted from this value at this
+				// point.
+				$field['value'] = wp_unslash( $_POST['acf'][ $field['key'] ] );
+			} elseif ( $post_id > 0 && function_exists( 'acf_get_value' ) ) {
 				$field['value'] = acf_get_value( $post_id, $field );
 			} elseif ( isset( $field['default_value'] ) ) {
 				$field['value'] = $field['default_value'];
@@ -1100,6 +1179,19 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 				if ( 'radio' === $display_style ) {
 					echo '<fieldset class="uacf-tax-radio"><legend>' . esc_html( $label ) . '</legend>';
+					// A real "None" option, checked by default when nothing
+					// is selected, guarantees the browser ALWAYS submits this
+					// field (radio groups submit nothing at all if no radio
+					// in them is checked). That lets a previously selected
+					// term be explicitly cleared when editing, and lets
+					// save_taxonomies() tell "no selection" apart from
+					// "this taxonomy's block isn't on the page at all".
+					printf(
+						'<label class="uacf-term-radio"><input type="radio" name="%s" value="" %s /> %s</label>',
+						esc_attr( $field_name ),
+						checked( empty( $selected ), true, false ),
+						esc_html__( 'None', 'uacf' )
+					);
 					foreach ( $tree as $row ) {
 						$term = $row['term'];
 						printf(
@@ -1356,7 +1448,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			wp_register_script(
 				$handle,
 				false,
-				array( 'wp-blocks', 'wp-element', 'wp-block-editor', 'wp-components', 'wp-i18n' ),
+				array( 'wp-blocks', 'wp-element', 'wp-block-editor', 'wp-components', 'wp-i18n', 'wp-data' ),
 				UACF_VERSION,
 				true
 			);
@@ -1421,6 +1513,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 	var TextControl = components.TextControl;
 	var ToggleControl = components.ToggleControl;
 	var Placeholder = components.Placeholder;
+	var Notice = components.Notice;
 
 	var ALLOWED_BLOCKS = [
 		'uacf/acf-field',
@@ -1434,6 +1527,18 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		'core/paragraph',
 		'core/spacer'
 	];
+
+	// Mirrors block_supports() on the PHP side (customClassName, anchor,
+	// spacing.margin/padding, color.text/background) so the same controls
+	// that register_block_type() enables for server-side rendering also
+	// actually appear in the editor's own Advanced/Styles panels — PHP
+	// alone is not enough for that.
+	var UACF_BLOCK_SUPPORTS = {
+		customClassName: true,
+		anchor: true,
+		spacing: { margin: true, padding: true },
+		color: { background: true, text: true }
+	};
 
 	var postTypeChoices = [ { value: '', label: __( 'Select a content type…', 'uacf' ) } ];
 	if ( window.uacfBlockData && window.uacfBlockData.postTypes ) {
@@ -1473,13 +1578,29 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		providesContext: {
 			'uacf/postType': 'postType'
 		},
-		supports: {
-			html: false
-		},
+		supports: Object.assign( {}, UACF_BLOCK_SUPPORTS, { html: false } ),
 		edit: function ( props ) {
 			var attributes = props.attributes;
 			var setAttributes = props.setAttributes;
+			var clientId = props.clientId;
 			var blockProps = blockPropsOf( { className: 'uacf-form-editor-wrap' } );
+
+			// Called unconditionally on every render (never inside an "if"),
+			// to respect the Rules of Hooks — it simply returns an empty map
+			// when wp-data's block-editor selectors aren't available.
+			var presentFieldKeys = ( window.wp && wp.data && wp.data.useSelect ) ? wp.data.useSelect( function ( select ) {
+				var editor = select( 'core/block-editor' );
+				var keys = {};
+				if ( editor && editor.getClientIdsOfDescendants ) {
+					editor.getClientIdsOfDescendants( [ clientId ] ).forEach( function ( id ) {
+						var block = editor.getBlock( id );
+						if ( block && 'uacf/acf-field' === block.name && block.attributes && block.attributes.fieldKey ) {
+							keys[ block.attributes.fieldKey ] = true;
+						}
+					} );
+				}
+				return keys;
+			}, [ clientId ] ) : {};
 
 			var inspector = el(
 				InspectorControls,
@@ -1504,6 +1625,24 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				__( 'Universal ACF Form', 'uacf' ) + ' — ' + ( attributes.postType ? getPostTypeLabel( attributes.postType ) : __( 'No content type selected', 'uacf' ) )
 			);
 
+			// "Si es posible" warning: which required ACF fields for this
+			// CPT have no Universal ACF Field block anywhere inside this
+			// form yet. Best-effort only — it can't see conditional logic
+			// either, same documented limitation as the server-side check.
+			var missingWarning = null;
+			var fieldsForType = ( window.uacfBlockData && window.uacfBlockData.fields && window.uacfBlockData.fields[ attributes.postType ] ) || [];
+			var missingRequired = fieldsForType.filter( function ( f ) {
+				return f.required && ! presentFieldKeys[ f.key ];
+			} );
+			if ( attributes.postType && missingRequired.length && Notice ) {
+				var missingNames = missingRequired.map( function ( f ) { return f.label; } ).join( ', ' );
+				missingWarning = el(
+					Notice,
+					{ status: 'warning', isDismissible: false, className: 'uacf-missing-required-notice' },
+					__( 'This form is missing required field(s):', 'uacf' ) + ' ' + missingNames
+				);
+			}
+
 			var body;
 			if ( useInnerBlocksProps ) {
 				var innerBlocksProps = useInnerBlocksProps(
@@ -1519,7 +1658,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				);
 			}
 
-			return el( 'div', blockProps, inspector, header, body );
+			return el( 'div', blockProps, inspector, header, missingWarning, body );
 		},
 		save: function () {
 			return el( InnerBlocks.Content );
@@ -1540,6 +1679,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			fieldKey: { type: 'string', default: '' }
 		},
 		usesContext: [ 'uacf/postType' ],
+		supports: UACF_BLOCK_SUPPORTS,
 		edit: function ( props ) {
 			var attributes = props.attributes;
 			var setAttributes = props.setAttributes;
@@ -1613,6 +1753,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			displayStyle: { type: 'string', default: 'dropdown' }
 		},
 		usesContext: [ 'uacf/postType' ],
+		supports: UACF_BLOCK_SUPPORTS,
 		edit: function ( props ) {
 			var attributes = props.attributes;
 			var setAttributes = props.setAttributes;
@@ -1711,6 +1852,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		description: __( 'Placeholder where form validation errors and save confirmations appear.', 'uacf' ),
 		icon: 'megaphone',
 		category: 'widgets',
+		supports: UACF_BLOCK_SUPPORTS,
 		edit: function () {
 			var blockProps = blockPropsOf();
 			return el( 'div', blockProps, el( Placeholder, {
@@ -1739,6 +1881,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			fullWidth: { type: 'boolean', default: false }
 		},
 		usesContext: [ 'uacf/postType' ],
+		supports: UACF_BLOCK_SUPPORTS,
 		edit: function ( props ) {
 			var attributes = props.attributes;
 			var setAttributes = props.setAttributes;

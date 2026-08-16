@@ -1,6 +1,44 @@
-# Universal ACF Form v2.0.0 — installation and usage instructions
+# Universal ACF Form v2.1.0 — installation and usage instructions
 
 File: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
+
+## What changed in v2.1.0 (fixes on top of the v2.0.0 architecture)
+
+- **Block supports now also declared in JS**, not just PHP's
+  `register_block_type()`: all 5 blocks share a `UACF_BLOCK_SUPPORTS`
+  object (`customClassName`, `anchor`, `spacing.margin/padding`,
+  `color.text/background`) in `registerBlockType()`, so the Advanced/
+  Styles controls actually appear in the editor (PHP-side `supports`
+  alone only affects server-side rendering, not the editor UI). The
+  parent form block keeps `html: false` in addition.
+- **Validate before creating.** `process_submission()` no longer calls
+  `wp_insert_post()` and then deletes it again on a validation failure.
+  The order is now: nonce → permissions → Field Key whitelist → required-
+  fields-present check → `acf_validate_save_post()` → **only if valid**,
+  `wp_insert_post()` (create mode) or resolve `edit_id` (edit mode) →
+  `acf_save_post()` → redirect. Nothing is ever created-then-deleted.
+- **Submitted values survive a validation error.** Universal ACF Field
+  now redisplays `$_POST['acf'][$field_key]` (via `wp_unslash()` only —
+  never `sanitize_text_field()` or similar, since that would corrupt
+  array-shaped values like Checkbox/Relationship/Post Object/Select-
+  multiple, or an Image/File field's attachment ID) whenever this
+  request's submission was rejected, instead of falling back to the
+  stored/default value and forcing the user to start over.
+- **Required ACF fields are enforced against the form's actual blocks.**
+  A required field whose Field Key never appears in `$_POST['acf']` — i.e.
+  no Universal ACF Field block was added for it — now blocks creation
+  with a clear error, with documented exceptions for `_code` fields
+  (server-generated) and fields with conditional logic (can't be reliably
+  re-evaluated server-side without duplicating ACF's own engine). The
+  parent block's editor view also shows a best-effort warning listing any
+  required field with no matching block anywhere inside the form yet.
+- **Taxonomy radio buttons get a real "None" option**, checked by default
+  when nothing is selected. Without it, an entirely-unchecked native radio
+  group submits nothing at all, so a previously selected term could never
+  be cleared when editing; the fix guarantees the field is always present
+  in `$_POST`, letting `wp_set_object_terms()` clear the relationship.
+- Minor cleanup: `resolve_edit_context()` now has a single cache-and-
+  return point instead of repeating it per branch.
 
 ## What changed in v2.0.0 (breaking architecture change)
 
