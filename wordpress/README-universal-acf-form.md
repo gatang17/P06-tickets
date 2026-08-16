@@ -1,6 +1,44 @@
-# Universal ACF Form v2.1.0 — installation and usage instructions
+# Universal ACF Form v2.2.0 — installation and usage instructions
 
 File: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
+
+## Where to change how the form LOOKS (read this before touching the file)
+
+The CSS embedded in the snippet (`get_frontend_css()`) is now **functional
+only** — it exists purely to make the taxonomy dropdown behave correctly
+(overlay positioning, scroll on long lists) and nothing else. There is no
+color, font, border, shadow, or width in it on purpose, so nobody is ever
+tempted to open this PHP file to restyle the form — a stray character
+there breaks the whole snippet for the entire site.
+
+To actually design the form, without ever opening this file:
+
+- Select any of the 5 blocks in Gutenberg and use its own **Styles**
+  panel in the sidebar — **Color** (text/background) and **Spacing**
+  (margin/padding) are wired to every block already (see "Assigning a CSS
+  class to each field" below for the full supports list). No code.
+- Give a block an **Additional CSS class(es)** name (Advanced panel) and
+  write the real CSS rule for that class in **Appearance → Customize →
+  Additional CSS**, or in the active theme's own stylesheet. A mistake
+  there can only break how the page *looks* — it can never break the PHP
+  running this system.
+- A developer who genuinely needs to adjust the functional layer itself
+  (e.g. the dropdown's max-height) can do it from **outside** this file
+  via the `uacf_frontend_css` filter, instead of editing `get_frontend_css()`.
+
+## What changed in v2.2.0
+
+- `get_frontend_css()` stripped down to purely functional rules (dropdown
+  positioning/overflow, list stacking) — every color, font, border,
+  shadow, and the `.uacf-form-wrap` width constraint were removed. That
+  width rule also contradicted the requirement that the parent form block
+  must not impose a specific width/color/design of its own.
+- Added the `uacf_frontend_css` filter so the functional CSS can be
+  extended from outside this file if truly needed.
+- Removed a few editor-only/preview-only CSS classes
+  (`.uacf-static-preview`, `.uacf-form-editor-*`) that had no effect
+  anyway: `get_frontend_css()` is only enqueued on the front-end, so
+  styling editor-only markup from there was dead code.
 
 ## What changed in v2.1.0 (fixes on top of the v2.0.0 architecture)
 

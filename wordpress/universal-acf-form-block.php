@@ -41,7 +41,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
-	define( 'UACF_VERSION', '2.1.0' );
+	define( 'UACF_VERSION', '2.2.0' );
 }
 
 if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
@@ -2050,36 +2050,47 @@ JS;
 JS;
 		}
 
+		/**
+		 * FUNCTIONAL CSS ONLY — deliberately not a place to "design" this
+		 * form. Every rule here exists because the widget genuinely
+		 * misbehaves without it (the taxonomy dropdown must be an
+		 * absolutely-positioned overlay with a scrollable max-height, radio/
+		 * checkbox lists must stack instead of running inline, etc.). There
+		 * is no color, font, border, shadow, or width choice in this
+		 * function — those are exactly the kind of edits someone could make
+		 * here by hand and, one stray quote later, break this entire PHP
+		 * snippet for the whole site.
+		 *
+		 * Anyone who wants to change how the form LOOKS should do it
+		 * without ever opening this file:
+		 *   - Select the block (form, field, taxonomy field, message,
+		 *     button) in Gutenberg and use its own "Styles" panel — Color
+		 *     (text/background) and Spacing (margin/padding) are already
+		 *     wired to every one of the 5 blocks, no code required.
+		 *   - Give a block an "Additional CSS class(es)" name (Advanced
+		 *     panel) and write the actual visual rule for that class in
+		 *     Appearance → Customize → Additional CSS, or in the active
+		 *     theme's own stylesheet — never in this file. A mistake there
+		 *     can, at worst, break how the page looks; it can never break
+		 *     the PHP running this system.
+		 *
+		 * A developer who genuinely needs to extend this functional layer
+		 * (e.g. a different dropdown max-height) can do so from outside
+		 * this file too, via the 'uacf_frontend_css' filter, instead of
+		 * editing this function.
+		 */
 		private static function get_frontend_css() {
-			return <<<'CSS'
-.uacf-form-wrap { max-width: 720px; margin: 0 auto; }
-.uacf-notice { padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; border: 1px solid transparent; }
-.uacf-notice-info { background: #eef6fc; border-color: #b6d9ee; color: #0c5d8f; }
-.uacf-notice-success { background: #eafaf0; border-color: #b7e4c7; color: #1a7f4e; }
-.uacf-notice-error { background: #fdecea; border-color: #f5c2c0; color: #a12622; }
-.uacf-field-wrap { margin-bottom: 16px; }
-.uacf-taxonomy-wrap { margin-bottom: 16px; }
-.uacf-tax-label { display: block; font-weight: 600; margin-bottom: 4px; }
+			$css = <<<'CSS'
 .uacf-tax-radio, .uacf-tax-checkboxes { border: 0; padding: 0; margin: 0; }
-.uacf-tax-radio legend, .uacf-tax-checkboxes legend { font-weight: 600; padding: 0 0 4px; }
-.uacf-term-radio, .uacf-term-checkbox { display: block; margin: 4px 0; font-weight: normal; }
-.uacf-term-select { min-width: 220px; }
-.uacf-no-terms { color: #6b6b6b; font-style: italic; margin: 0; }
-.uacf-term-dropdown { position: relative; display: inline-block; min-width: 240px; }
-.uacf-term-dropdown-toggle { width: 100%; text-align: left; padding: 8px 12px; border: 1px solid #8c8f94; border-radius: 4px; background: #fff; cursor: pointer; }
-.uacf-term-dropdown-toggle[aria-expanded="true"] { border-color: #2271b1; }
+.uacf-term-radio, .uacf-term-checkbox { display: block; }
+.uacf-term-dropdown { position: relative; }
+.uacf-term-dropdown-toggle { width: 100%; text-align: left; }
 .uacf-term-dropdown-panel { margin-top: 4px; }
-.uacf-term-dropdown.is-open .uacf-term-dropdown-panel { position: absolute; z-index: 10; left: 0; right: 0; background: #fff; border: 1px solid #8c8f94; border-radius: 4px; padding: 8px 12px; max-height: 240px; overflow-y: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
-.uacf-submit-button, .uacf-submit-button-preview { display: inline-block; padding: 10px 20px; border-radius: 4px; border: 1px solid #2271b1; background: #2271b1; color: #fff; cursor: pointer; }
-.uacf-submit-button-full { display: block; width: 100%; text-align: center; }
-input[readonly].acf-is-appended, .uacf-form-wrap input[readonly] { background: #f6f7f7; color: #6b6b6b; }
-.uacf-static-preview { border: 1px dashed #c3c4c7; border-radius: 4px; padding: 16px; text-align: center; color: #50575e; }
-.uacf-static-preview-title { font-weight: 600; margin: 0 0 4px; }
-.uacf-static-preview-meta { margin: 0; }
-.uacf-form-editor-wrap { border: 1px dashed #c3c4c7; border-radius: 4px; padding: 12px; }
-.uacf-form-editor-label { font-weight: 600; margin: 0 0 8px; }
-.uacf-form-editor-body { border-top: 1px solid #e0e0e0; padding-top: 8px; min-height: 48px; }
+.uacf-term-dropdown.is-open .uacf-term-dropdown-panel { position: absolute; z-index: 10; left: 0; right: 0; max-height: 240px; overflow-y: auto; }
+.uacf-submit-button-full { display: block; width: 100%; }
 CSS;
+
+			return apply_filters( 'uacf_frontend_css', $css );
 		}
 
 	}
