@@ -1,32 +1,32 @@
 <?php
 /**
- * Universal ACF Form — bloque dinámico universal para crear/editar registros
- * de cualquier Custom Post Type usando Advanced Custom Fields (ACF Free).
+ * Universal ACF Form — universal dynamic block for creating/editing records
+ * of any Custom Post Type using Advanced Custom Fields (ACF Free).
  *
- * IMPORTANTE — CÓMO INSTALARLO CON EL PLUGIN "CODE SNIPPETS":
- *   1. Copia TODO el contenido de este archivo.
- *   2. En Code Snippets → Add New, pega el código PERO ELIMINA la primera
- *      línea "<?php" (Code Snippets ya interpreta el editor como PHP, por
- *      lo que la etiqueta de apertura no debe incluirse).
- *   3. Guarda el snippet con el ajuste "Run snippet everywhere" (todo el sitio).
- *   4. Actívalo.
+ * IMPORTANT — HOW TO INSTALL WITH THE "CODE SNIPPETS" PLUGIN:
+ *   1. Copy the ENTIRE contents of this file.
+ *   2. In Code Snippets → Add New, paste the code BUT REMOVE the first
+ *      line "<?php" (Code Snippets already treats the editor as PHP, so
+ *      the opening tag must not be included).
+ *   3. Save the snippet with the "Run snippet everywhere" setting (site-wide).
+ *   4. Activate it.
  *
- * Si en cambio vas a usar este archivo como mu-plugin o plugin normal,
- * déjalo tal cual está (con la etiqueta "<?php" incluida).
+ * If instead you're going to use this file as an mu-plugin or a regular
+ * plugin, leave it as-is (with the "<?php" tag included).
  *
- * No depende de ACF Pro, Composer, Node.js, npm ni de ningún build step.
- * Todo el JavaScript del editor de bloques se genera e inyecta desde este
- * mismo archivo mediante wp_add_inline_script().
+ * Does not depend on ACF Pro, Composer, Node.js, npm, or any build step.
+ * All of the block editor JavaScript is generated and injected from this
+ * same file via wp_add_inline_script().
  *
- * Requisitos: WordPress con Gutenberg, ACF Free activo, PHP 8.1+.
+ * Requirements: WordPress with Gutenberg, ACF Free active, PHP 8.1+.
  */
 
 // =============================================================================
-// SECCIÓN 1 — COMPROBACIONES Y CONSTANTES
+// SECTION 1 — CHECKS AND CONSTANTS
 // =============================================================================
 
 if ( ! defined( 'ABSPATH' ) ) {
-	exit; // Salida de seguridad: no permitir acceso directo al archivo.
+	exit; // Security exit: do not allow direct access to the file.
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
@@ -38,23 +38,24 @@ if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
 }
 
 // =============================================================================
-// SECCIÓN 6 — PREFIJO AUTOMÁTICO (función pública, fuera de la clase porque el
-// requisito pide explícitamente esta firma exacta: inventory_get_prefix($post_type)).
+// SECTION 6 — AUTOMATIC PREFIX (public function, kept outside the class
+// because the requirement explicitly asks for this exact signature:
+// inventory_get_prefix($post_type)).
 // =============================================================================
 
 if ( ! function_exists( 'inventory_get_prefix' ) ) {
 	/**
-	 * Genera un prefijo determinista de 3 caracteres a partir de un post type key.
-	 * No usa ninguna tabla manual: se calcula únicamente a partir del texto del
-	 * propio post type key normalizando guiones, guiones bajos y espacios.
+	 * Generates a deterministic 3-character prefix from a post type key.
+	 * Uses no manual lookup table: it is calculated purely from the post
+	 * type key's own text, normalizing hyphens, underscores, and spaces.
 	 *
-	 * @param string $post_type Post type key (ej. "stock_record").
-	 * @return string Prefijo en mayúsculas de 3 caracteres (ej. "SRE").
+	 * @param string $post_type Post type key (e.g. "stock_record").
+	 * @return string Uppercase 3-character prefix (e.g. "SRE").
 	 */
 	function inventory_get_prefix( $post_type ) {
 		$post_type = (string) $post_type;
 
-		// Normalizar separadores: guion, guion bajo y espacio -> espacio único.
+		// Normalize separators: hyphen, underscore and space -> single space.
 		$normalized = str_replace( array( '-', '_' ), ' ', $post_type );
 		$normalized = trim( preg_replace( '/\s+/', ' ', $normalized ) );
 
@@ -71,20 +72,20 @@ if ( ! function_exists( 'inventory_get_prefix' ) ) {
 		$prefix = '';
 
 		if ( 1 === $count ) {
-			// Una sola palabra: primeras 3 letras.
+			// Single word: first 3 letters.
 			$prefix = substr( $words[0], 0, 3 );
 		} elseif ( 2 === $count ) {
-			// Dos palabras: primera letra de la 1ª + primeras 2 de la 2ª.
+			// Two words: first letter of the 1st + first 2 letters of the 2nd.
 			$prefix = substr( $words[0], 0, 1 ) . substr( $words[1], 0, 2 );
 		} elseif ( $count >= 3 ) {
-			// Tres o más palabras: primera letra de las 3 primeras palabras.
+			// Three or more words: first letter of the first 3 words.
 			$prefix = substr( $words[0], 0, 1 ) . substr( $words[1], 0, 1 ) . substr( $words[2], 0, 1 );
 		}
 
 		$prefix = strtoupper( $prefix );
 
-		// Relleno determinista si el resultado tiene menos de 3 caracteres
-		// (por ejemplo, un post type key extremadamente corto o vacío).
+		// Deterministic padding if the result is shorter than 3 characters
+		// (e.g. an extremely short or empty post type key).
 		if ( strlen( $prefix ) < 3 ) {
 			$source = strtoupper( preg_replace( '/[^A-Za-z0-9]/', '', $post_type ) );
 			$i      = 0;
@@ -92,7 +93,7 @@ if ( ! function_exists( 'inventory_get_prefix' ) ) {
 				if ( $i < strlen( $source ) ) {
 					$prefix .= $source[ $i ];
 				} else {
-					$prefix .= 'X'; // Relleno fijo y determinista una vez agotada la fuente.
+					$prefix .= 'X'; // Fixed, deterministic padding once the source is exhausted.
 				}
 				$i++;
 			}
@@ -103,9 +104,9 @@ if ( ! function_exists( 'inventory_get_prefix' ) ) {
 }
 
 // =============================================================================
-// CLASE PRINCIPAL — encapsula todo el sistema para evitar colisiones de
-// nombres con otros plugins/snippets. Se declara una única vez gracias al
-// guard class_exists().
+// MAIN CLASS — encapsulates the whole system to avoid name collisions with
+// other plugins/snippets. Declared exactly once thanks to the
+// class_exists() guard.
 // =============================================================================
 
 if ( ! class_exists( 'UACF_Universal_Form' ) ) {
@@ -113,8 +114,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 	final class UACF_Universal_Form {
 
 		// -------------------------------------------------------------------
-		// Caché en memoria (solo dura la petición actual, nunca transients
-		// persistentes, para que los campos ACF nuevos aparezcan al instante).
+		// In-memory cache (lasts only for the current request, never
+		// persistent transients, so new ACF fields appear instantly).
 		// -------------------------------------------------------------------
 		private static $post_types_cache = null;
 		private static $groups_cache     = array();
@@ -122,7 +123,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		private static $taxonomies_cache = array();
 
 		// =====================================================================
-		// SECCIÓN 7/8/9 — arranque y registro de hooks
+		// SECTION 7/8/9 — bootstrap and hook registration
 		// =====================================================================
 
 		public static function init() {
@@ -140,13 +141,13 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 2 — DESCUBRIMIENTO AUTOMÁTICO DE CPT
+		// SECTION 2 — AUTOMATIC CPT DISCOVERY
 		// =====================================================================
 
 		/**
-		 * Devuelve todos los post types públicos con interfaz de administración,
-		 * excluyendo los internos de WordPress/ACF/Gutenberg. Sin listas manuales
-		 * de CPT propios del sitio.
+		 * Returns every public post type with an admin UI, excluding the
+		 * internal WordPress/ACF/Gutenberg ones. No manual list of the
+		 * site's own CPTs.
 		 *
 		 * @return array<string,WP_Post_Type>
 		 */
@@ -165,8 +166,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				'wp_template',
 				'wp_template_part',
 				'wp_navigation',
-				// Otros post types internos genéricos de WordPress (no son
-				// entidades de la aplicación, son núcleo de WP):
+				// Other generic WordPress-internal post types (these are not
+				// application entities, they are WP core):
 				'wp_global_styles',
 				'wp_font_family',
 				'wp_font_face',
@@ -177,7 +178,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			);
 
 			/**
-			 * Permite ajustar la lista de exclusión sin tocar este snippet.
+			 * Lets the exclusion list be adjusted without touching this snippet.
 			 */
 			$excluded = apply_filters( 'uacf_excluded_post_types', $excluded );
 
@@ -200,14 +201,14 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 3 — DESCUBRIMIENTO AUTOMÁTICO DE GRUPOS Y CAMPOS ACF
+		// SECTION 3 — AUTOMATIC DISCOVERY OF ACF GROUPS AND FIELDS
 		// =====================================================================
 
 		/**
-		 * Grupos ACF activos cuyas Location Rules apuntan a este post type.
+		 * Active ACF field groups whose Location Rules target this post type.
 		 *
 		 * @param string $post_type
-		 * @return array Lista de grupos ACF (arrays), tal como los devuelve ACF.
+		 * @return array List of ACF groups (arrays), as returned by ACF.
 		 */
 		public static function get_field_groups_for_post_type( $post_type ) {
 			if ( isset( self::$groups_cache[ $post_type ] ) ) {
@@ -229,11 +230,11 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Todos los campos (nivel superior) de los grupos activos de un CPT,
-		 * sin importar el orden/posición en el que estén dentro del grupo.
+		 * All top-level fields from the active groups of a CPT, regardless
+		 * of the order/position in which they sit inside the group.
 		 *
 		 * @param string $post_type
-		 * @return array Lista plana de arrays de campo ACF.
+		 * @return array Flat list of ACF field arrays.
 		 */
 		public static function get_fields_for_post_type( $post_type ) {
 			if ( isset( self::$fields_cache[ $post_type ] ) ) {
@@ -259,12 +260,12 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 4 — PREFIJOS Y CÓDIGOS
+		// SECTION 4 — PREFIXES AND CODES
 		// =====================================================================
 
 		/**
-		 * Busca, entre los campos de nivel superior de un CPT, el primer campo
-		 * de tipo "text" cuyo Field Name termine exactamente en "_code".
+		 * Looks, among a CPT's top-level fields, for the first field of type
+		 * "text" whose Field Name ends exactly in "_code".
 		 *
 		 * @param array $fields
 		 * @return array|null
@@ -283,15 +284,15 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Genera un código único PREFIX-001, PREFIX-002... para un post type,
-		 * usando un contador atómico en wp_options (UPDATE ... = valor + 1),
-		 * lo que evita duplicados incluso ante envíos dobles o carreras entre
-		 * peticiones concurrentes. Además verifica contra los registros
-		 * existentes (incluidos los ya eliminados no afectan la numeración,
-		 * porque el contador nunca retrocede).
+		 * Generates a unique code PREFIX-001, PREFIX-002... for a post type,
+		 * using an atomic counter in wp_options (UPDATE ... = value + 1),
+		 * which avoids duplicates even with double submissions or races
+		 * between concurrent requests. It also checks against existing
+		 * records (deleted records don't affect the numbering either,
+		 * because the counter never goes backwards).
 		 *
 		 * @param string $post_type
-		 * @param string $field_name Nombre del campo "_code" (para comprobar duplicados).
+		 * @param string $field_name Name of the "_code" field (used to check for duplicates).
 		 * @return string
 		 */
 		public static function generate_unique_code( $post_type, $field_name ) {
@@ -334,7 +335,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Comprueba si ya existe un registro de ese CPT con ese código exacto.
+		 * Checks whether a record of that CPT with that exact code already exists.
 		 */
 		private static function code_exists( $post_type, $field_name, $code ) {
 			$existing = get_posts( array(
@@ -353,9 +354,9 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Filtro acf/load_field: hace readonly y no-obligatorio, solo en el
-		 * front-end (nunca en wp-admin), cualquier campo de texto cuyo nombre
-		 * termine en "_code". El valor real se calcula en finalize_save_post().
+		 * acf/load_field filter: makes readonly and non-required, only on
+		 * the front-end (never in wp-admin), any text field whose name ends
+		 * in "_code". The actual value is computed in finalize_save_post().
 		 */
 		public static function adjust_code_field( $field ) {
 			if ( is_admin() ) {
@@ -372,20 +373,20 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			$field['required'] = 0;
 
 			if ( empty( $field['placeholder'] ) ) {
-				$field['placeholder'] = __( 'Se generará automáticamente al guardar', 'uacf' );
+				$field['placeholder'] = __( 'Will be generated automatically on save', 'uacf' );
 			}
 
 			return $field;
 		}
 
 		// =====================================================================
-		// SECCIÓN 5 — DETECCIÓN DEL CAMPO QUE FORMARÁ EL TÍTULO
+		// SECTION 5 — DETECTION OF THE FIELD THAT WILL FORM THE TITLE
 		// =====================================================================
 
 		/**
-		 * 1) Primer campo de texto obligatorio cuyo nombre no termine en "_code".
-		 * 2) Si no existe, el primer campo de texto (no "_code").
-		 * 3) Si no existe ninguno, devuelve null (el llamador decide el fallback).
+		 * 1) First required text field whose name does not end in "_code".
+		 * 2) If none exists, the first text field (not "_code").
+		 * 3) If none exists at all, returns null (the caller decides the fallback).
 		 */
 		public static function find_title_field( array $fields ) {
 			$first_text = null;
@@ -410,8 +411,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Calcula el post_title final siguiendo la estrategia genérica descrita
-		 * en el punto 8 de los requisitos.
+		 * Computes the final post_title following the generic strategy
+		 * described in requirement point 8.
 		 */
 		private static function determine_title( $post_type, $post_id, array $fields, $code ) {
 			$title_field = self::find_title_field( $fields );
@@ -440,16 +441,16 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 6 — TAXONOMÍAS
+		// SECTION 6 — TAXONOMIES
 		// =====================================================================
 
 		/**
-		 * Taxonomías públicas asociadas a un CPT (excluyendo internas) que,
-		 * además, el usuario actual tiene permiso de asignar
-		 * (current_user_can($tax_object->cap->assign_terms)). Al filtrar aquí,
-		 * tanto el renderizado (build_after_fields_html) como el guardado
-		 * (save_taxonomies) respetan automáticamente esta comprobación: una
-		 * taxonomía sin permiso de asignación nunca se muestra ni se guarda.
+		 * Public taxonomies associated with a CPT (excluding internal ones)
+		 * that, in addition, the current user is allowed to assign
+		 * (current_user_can($tax_object->cap->assign_terms)). By filtering
+		 * here, both rendering (build_after_fields_html) and saving
+		 * (save_taxonomies) automatically respect this check: a taxonomy
+		 * the user isn't allowed to assign is never shown nor saved.
 		 *
 		 * @return array<string,WP_Taxonomy>
 		 */
@@ -489,8 +490,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Convierte una lista plana de términos (get_terms) en un árbol
-		 * ordenado por jerarquía, con la profundidad de cada término.
+		 * Converts a flat list of terms (get_terms) into a tree ordered by
+		 * hierarchy, with the depth of each term.
 		 */
 		private static function build_term_tree( array $terms, $parent = 0, $depth = 0 ) {
 			$branch = array();
@@ -507,20 +508,20 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Guarda las taxonomías seleccionadas usando wp_set_object_terms().
-		 * Solo permite seleccionar términos EXISTENTES (nunca crea términos
-		 * nuevos): cada valor se valida con term_exists() antes de guardarlo.
-		 * Solo itera taxonomías devueltas por get_taxonomies_for_post_type(),
-		 * que ya excluye aquellas para las que el usuario actual no tiene
-		 * cap->assign_terms, así que wp_set_object_terms() nunca se llama sin
-		 * esa capacidad verificada.
+		 * Saves the selected taxonomies using wp_set_object_terms(). Only
+		 * allows selecting EXISTING terms (never creates new ones): every
+		 * value is validated with term_exists() before saving it. Only
+		 * iterates taxonomies returned by get_taxonomies_for_post_type(),
+		 * which already excludes those the current user lacks
+		 * cap->assign_terms for, so wp_set_object_terms() is never called
+		 * without that capability having been verified.
 		 */
 		private static function save_taxonomies( $post_type, $post_id ) {
 			foreach ( self::get_taxonomies_for_post_type( $post_type ) as $tax_name => $tax_object ) {
 				$field_key = 'uacf_tax_' . $tax_name;
 
 				if ( ! isset( $_POST[ $field_key ] ) ) {
-					continue; // El control ni siquiera se mostró (0 términos disponibles).
+					continue; // The control wasn't even shown (0 terms available).
 				}
 
 				$raw = wp_unslash( $_POST[ $field_key ] );
@@ -539,7 +540,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 7 — SEGURIDAD Y PERMISOS
+		// SECTION 7 — SECURITY AND PERMISSIONS
 		// =====================================================================
 
 		private static function nonce_action( $post_type, $mode ) {
@@ -547,10 +548,10 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Valida un edit_id recibido por GET de forma segura: comprueba que el
-		 * post existe, que pertenece exactamente al CPT del bloque y que el
-		 * usuario actual puede editarlo (capacidades nativas del CPT vía
-		 * current_user_can('edit_post', $id), no por nombre de rol).
+		 * Safely validates an edit_id received via GET: checks that the
+		 * post exists, that it belongs exactly to the block's CPT, and that
+		 * the current user can edit it (native CPT capabilities via
+		 * current_user_can('edit_post', $id), not by role name).
 		 *
 		 * @return WP_Post|null
 		 */
@@ -572,12 +573,12 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Resuelve el post_status con el que se creará un registro nuevo,
-		 * comprobando SIEMPRE la capacidad nativa de publicación del CPT
-		 * (cap->publish_posts). Un filtro externo (uacf_new_post_status)
-		 * puede pedir 'publish', pero si el usuario actual no tiene esa
-		 * capacidad, el registro se degrada a 'draft' de forma obligatoria:
-		 * ningún filtro puede saltarse esta comprobación.
+		 * Resolves the post_status a new record will be created with,
+		 * ALWAYS checking the CPT's native publish capability
+		 * (cap->publish_posts). An external filter (uacf_new_post_status)
+		 * may request 'publish', but if the current user doesn't have that
+		 * capability, the record is forcibly downgraded to 'draft': no
+		 * filter can bypass this check.
 		 *
 		 * @param WP_Post_Type $post_type_object
 		 * @param mixed        $requested_status
@@ -597,18 +598,18 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Hook acf/validate_save_post (antes de guardar cualquier campo).
-		 * Verifica usuario autenticado, nonce propio, whitelist de CPT y
-		 * capacidades nativas del CPT. Si algo falla, añade un error de
-		 * validación de ACF, lo que impide por completo que se cree o
-		 * actualice el post (ACF aborta el guardado si hay errores).
+		 * acf/validate_save_post hook (before any field is saved). Verifies
+		 * the logged-in user, our own nonce, the CPT whitelist, and the
+		 * CPT's native capabilities. If anything fails, it adds an ACF
+		 * validation error, which fully prevents the post from being
+		 * created or updated (ACF aborts the save if there are errors).
 		 */
 		public static function gate_save_post() {
 			if ( is_admin() ) {
-				return; // No interferir nunca con el guardado normal desde wp-admin.
+				return; // Never interfere with normal saving from wp-admin.
 			}
 			if ( empty( $_POST['uacf_submit'] ) ) {
-				return; // No es un envío de este sistema.
+				return; // Not a submission from this system.
 			}
 
 			$post_type = isset( $_POST['uacf_post_type'] ) ? sanitize_key( wp_unslash( $_POST['uacf_post_type'] ) ) : '';
@@ -618,31 +619,31 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			$error = '';
 
 			if ( ! is_user_logged_in() ) {
-				$error = __( 'Debes iniciar sesión para enviar este formulario.', 'uacf' );
+				$error = __( 'You must be logged in to submit this form.', 'uacf' );
 			} else {
 				$available = self::get_available_post_types();
 
 				if ( '' === $post_type || ! isset( $available[ $post_type ] ) ) {
-					$error = __( 'Tipo de contenido no válido.', 'uacf' );
+					$error = __( 'Invalid content type.', 'uacf' );
 				} elseif ( ! in_array( $mode, array( 'create', 'edit' ), true ) ) {
-					$error = __( 'Solicitud de formulario no válida.', 'uacf' );
+					$error = __( 'Invalid form request.', 'uacf' );
 				} elseif ( ! wp_verify_nonce( $nonce, self::nonce_action( $post_type, $mode ) ) ) {
-					$error = __( 'La sesión del formulario ha caducado. Recarga la página e inténtalo de nuevo.', 'uacf' );
+					$error = __( 'The form session has expired. Reload the page and try again.', 'uacf' );
 				} else {
 					$post_type_object = $available[ $post_type ];
 
 					if ( 'create' === $mode ) {
 						if ( empty( $post_type_object->cap->create_posts ) || ! current_user_can( $post_type_object->cap->create_posts ) ) {
-							$error = __( 'No tienes permisos para crear este tipo de contenido.', 'uacf' );
+							$error = __( 'You do not have permission to create this content type.', 'uacf' );
 						}
 					} else {
 						$edit_id  = isset( $_POST['uacf_edit_id'] ) ? absint( wp_unslash( $_POST['uacf_edit_id'] ) ) : 0;
 						$existing = $edit_id ? get_post( $edit_id ) : null;
 
 						if ( ! $existing || $existing->post_type !== $post_type ) {
-							$error = __( 'El registro que intentas editar no existe o no coincide con este formulario.', 'uacf' );
+							$error = __( 'The record you are trying to edit does not exist or does not match this form.', 'uacf' );
 						} elseif ( ! current_user_can( 'edit_post', $edit_id ) ) {
-							$error = __( 'No tienes permisos para editar este registro.', 'uacf' );
+							$error = __( 'You do not have permission to edit this record.', 'uacf' );
 						}
 					}
 				}
@@ -654,39 +655,39 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 8 — PROCESAMIENTO DEL FORMULARIO (tras el guardado de ACF)
+		// SECTION 8 — FORM PROCESSING (after ACF's own save)
 		// =====================================================================
 
 		/**
-		 * Debe ejecutarse antes de cualquier salida HTML. Se llama en el hook
-		 * "wp" (temprano) para cualquier visitante autenticado en el front-end,
-		 * ya que acf_form_head() necesita procesar el $_POST (validar/guardar
-		 * y redirigir) antes de que se envíen cabeceras HTTP.
+		 * Must run before any HTML output. Called on the "wp" hook (early)
+		 * for any logged-in visitor on the front-end, since acf_form_head()
+		 * needs to process $_POST (validate/save and redirect) before any
+		 * HTTP headers are sent.
 		 */
 		public static function prime_form_head() {
 			if ( is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
 				return;
 			}
 			if ( ! is_user_logged_in() ) {
-				return; // Sin sesión no se puede enviar el formulario; evitamos el coste.
+				return; // Without a session the form can't be submitted; skip the cost.
 			}
 			if ( ! function_exists( 'acf_form_head' ) ) {
-				return; // ACF no está activo: nos lo indicará render_form() en pantalla.
+				return; // ACF is not active: render_form() will show this on screen.
 			}
 
-			wp_enqueue_media(); // Necesario para que el uploader "wp" (imágenes/archivos) funcione en el front-end.
+			wp_enqueue_media(); // Needed so the "wp" uploader (images/files) works on the front-end.
 			acf_form_head();
 		}
 
 		/**
-		 * Hook acf/save_post (prioridad 20, después de que ACF ya haya guardado
-		 * los campos con su prioridad por defecto 10). Aquí completamos lo que
-		 * ACF no gestiona de forma nativa: código, título y taxonomías.
+		 * acf/save_post hook (priority 20, after ACF has already saved the
+		 * fields at its default priority 10). Here we complete what ACF
+		 * doesn't handle natively: code, title, and taxonomies.
 		 *
-		 * No genera recursión: este hook es específico de ACF (solo se dispara
-		 * dentro de acf_save_post()), por lo que llamar aquí a wp_update_post()
-		 * NO vuelve a disparar 'acf/save_post'. Además se añade una guarda
-		 * estática adicional como defensa extra.
+		 * This does not cause recursion: this hook is ACF-specific (only
+		 * fired from within acf_save_post()), so calling wp_update_post()
+		 * here does NOT re-trigger 'acf/save_post'. A static guard is also
+		 * added as an extra safeguard.
 		 */
 		public static function finalize_save_post( $post_id ) {
 			if ( is_admin() ) {
@@ -696,7 +697,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				return;
 			}
 			if ( ! is_numeric( $post_id ) ) {
-				return; // acf/save_post también se dispara para "options", "user_N", etc.
+				return; // acf/save_post also fires for "options", "user_N", etc.
 			}
 
 			$post_id = (int) $post_id;
@@ -719,7 +720,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 			$claimed_post_type = isset( $_POST['uacf_post_type'] ) ? sanitize_key( wp_unslash( $_POST['uacf_post_type'] ) ) : '';
 			if ( $claimed_post_type !== $post_type ) {
-				return; // gate_save_post() ya debería haber bloqueado esto; defensa extra.
+				return; // gate_save_post() should already have blocked this; extra safeguard.
 			}
 
 			$mode = isset( $_POST['uacf_mode'] ) ? sanitize_key( wp_unslash( $_POST['uacf_mode'] ) ) : 'create';
@@ -732,18 +733,18 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				$existing_code = get_post_meta( $post_id, $code_field['name'], true );
 
 				if ( 'edit' === $mode && '' !== $existing_code ) {
-					// Editar: conservar el código existente, nunca generar uno nuevo.
+					// Editing: keep the existing code, never generate a new one.
 					$code = $existing_code;
 				} else {
 					$code = self::generate_unique_code( $post_type, $code_field['name'] );
 
 					if ( function_exists( 'update_field' ) && ! empty( $code_field['key'] ) ) {
-						// update_field() debe recibir el Field Key de ACF (no el
-						// Field Name) para resolver el campo de forma inequívoca.
+						// update_field() must receive ACF's Field Key (not the
+						// Field Name) to resolve the field unambiguously.
 						update_field( $code_field['key'], $code, $post_id );
 					}
-					// Conservamos también el post meta "plano" con el Field Name,
-					// que es la clave bajo la que se consulta con get_post_meta().
+					// Also keep the "plain" post meta under the Field Name,
+					// which is the key get_post_meta() is queried with.
 					update_post_meta( $post_id, $code_field['name'], $code );
 				}
 			}
@@ -758,18 +759,19 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 			self::save_taxonomies( $post_type, $post_id );
 
-			// La redirección a "?edit_id=<nuevo ID>" tras crear NO se hace aquí
-			// con wp_redirect()/exit: eso cortaría en seco cualquier callback de
-			// 'acf/save_post' registrado después de este (prioridad > 20) tanto
-			// de ACF como de otros plugins. En su lugar, render_form() ya monta
-			// el argumento 'return' de acf_form() con el placeholder oficial
-			// %post_id%, que ACF sustituye por el ID real una vez que TODO el
-			// proceso de guardado (incluido este hook) ha terminado, y es ACF
-			// quien realiza el redirect final por su cuenta.
+			// The redirect to "?edit_id=<new ID>" after creating is NOT done
+			// here with wp_redirect()/exit: that would abruptly cut off any
+			// 'acf/save_post' callback registered after this one (priority >
+			// 20), whether from ACF itself or from other plugins. Instead,
+			// render_form() already builds acf_form()'s 'return' argument
+			// with the official %post_id% placeholder, which ACF substitutes
+			// with the real ID once the ENTIRE save process (including this
+			// hook) has finished, and it is ACF that performs the final
+			// redirect on its own.
 		}
 
 		// =====================================================================
-		// SECCIÓN 9 — RENDERIZADO (compartido por bloque y shortcode)
+		// SECTION 9 — RENDERING (shared by the block and the shortcode)
 		// =====================================================================
 
 		private static function notice( $type, $message ) {
@@ -782,8 +784,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Devuelve la URL "limpia" de la página/entrada actual (sin parámetros
-		 * de este sistema), usada como base para el redirect tras guardar.
+		 * Returns the "clean" URL of the current page/entry (without this
+		 * system's parameters), used as the base for the post-save redirect.
 		 */
 		private static function get_current_clean_url() {
 			$queried_id = get_queried_object_id();
@@ -798,17 +800,17 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Construye la URL del argumento 'return' de acf_form().
+		 * Builds the URL for acf_form()'s 'return' argument.
 		 *
-		 * - Modo "edit": conserva el edit_id real ya conocido.
-		 * - Modo "create": usa el placeholder OFICIAL de acf_form(), literal
-		 *   "%post_id%", que ACF sustituye por el ID recién creado después de
-		 *   completar todo el proceso de guardado (incluidos los hooks
-		 *   acf/save_post de este sistema y de cualquier otro plugin). El
-		 *   placeholder se añade fuera de add_query_arg() y nunca se pasa por
-		 *   absint()/sanitize_*() ni por ninguna otra sanitización que pudiera
-		 *   alterar o eliminar los caracteres "%", precisamente para que ACF
-		 *   pueda encontrarlo y reemplazarlo tal cual.
+		 * - "edit" mode: keeps the real, already-known edit_id.
+		 * - "create" mode: uses acf_form()'s OFFICIAL placeholder, the
+		 *   literal string "%post_id%", which ACF substitutes with the
+		 *   newly created ID after the entire save process has completed
+		 *   (including this system's acf/save_post hooks and any other
+		 *   plugin's). The placeholder is appended outside of
+		 *   add_query_arg() and is never passed through absint()/sanitize_*()
+		 *   or any other sanitization that could alter or strip the "%"
+		 *   characters, precisely so ACF can find it and replace it as-is.
 		 */
 		private static function build_return_url( $mode, $edit_id ) {
 			$base = self::get_current_clean_url();
@@ -821,9 +823,9 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			$url = add_query_arg( $args, $base );
 
 			if ( 'create' === $mode ) {
-				// add_query_arg() urlencodearía "%post_id%" si lo pasáramos
-				// dentro de $args, rompiendo la sustitución de ACF. Por eso se
-				// concatena aparte, siempre en texto literal.
+				// add_query_arg() would urlencode "%post_id%" if we passed it
+				// inside $args, breaking ACF's substitution. That's why it's
+				// concatenated separately, always as literal text.
 				$separator = ( false === strpos( $url, '?' ) ) ? '?' : '&';
 				$url      .= $separator . 'edit_id=%post_id%';
 			}
@@ -874,8 +876,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				if ( empty( $terms ) ) {
 					echo '<p class="uacf-no-terms">' . esc_html(
 						sprintf(
-							/* translators: %s: nombre de la taxonomía. */
-							__( 'No hay términos de "%s" disponibles todavía.', 'uacf' ),
+							/* translators: %s: taxonomy label. */
+							__( 'No "%s" terms are available yet.', 'uacf' ),
 							$label
 						)
 					) . '</p>';
@@ -892,8 +894,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				}
 
 				$field_name = 'uacf_tax_' . $tax_name;
-				// Input "primer" oculto: permite detectar una deselección total
-				// (todas las casillas desmarcadas) en lugar de "campo no enviado".
+				// Hidden "primer" input: lets us detect a total deselection
+				// (every checkbox unchecked) instead of "field not submitted".
 				echo '<input type="hidden" name="' . esc_attr( $field_name ) . '[]" value="" />';
 
 				if ( ! empty( $tax_object->hierarchical ) ) {
@@ -932,34 +934,34 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Renderizador único usado tanto por el bloque de Gutenberg como por
-		 * el shortcode [universal_acf_form]. Recibe solo el post type key.
+		 * Single renderer used both by the Gutenberg block and by the
+		 * [universal_acf_form] shortcode. Receives only the post type key.
 		 *
 		 * @param string $post_type
-		 * @return string HTML del formulario o de un mensaje de error/estado.
+		 * @return string HTML of the form or of an error/status message.
 		 */
 		public static function render_form( $post_type ) {
 			$post_type = sanitize_key( $post_type );
 
 			if ( ! function_exists( 'acf_form_head' ) || ! function_exists( 'acf_get_field_groups' ) ) {
-				return self::notice( 'error', __( 'Advanced Custom Fields (ACF) no está activo. Actívalo para poder usar este formulario.', 'uacf' ) );
+				return self::notice( 'error', __( 'Advanced Custom Fields (ACF) is not active. Activate it to use this form.', 'uacf' ) );
 			}
 
 			if ( '' === $post_type ) {
-				return self::notice( 'info', __( 'Este bloque todavía no tiene un tipo de contenido seleccionado. Configúralo desde el panel lateral del editor.', 'uacf' ) );
+				return self::notice( 'info', __( 'This block does not have a content type selected yet. Configure it from the editor sidebar.', 'uacf' ) );
 			}
 
 			$available = self::get_available_post_types();
 			if ( ! isset( $available[ $post_type ] ) ) {
-				return self::notice( 'error', __( 'El tipo de contenido seleccionado no existe o no está disponible.', 'uacf' ) );
+				return self::notice( 'error', __( 'The selected content type does not exist or is not available.', 'uacf' ) );
 			}
 
 			if ( ! is_user_logged_in() ) {
 				return self::notice(
 					'info',
 					sprintf(
-						/* translators: %s: URL de inicio de sesión. */
-						__( 'Debes <a href="%s">iniciar sesión</a> para usar este formulario.', 'uacf' ),
+						/* translators: %s: login URL. */
+						__( 'You must <a href="%s">log in</a> to use this form.', 'uacf' ),
 						esc_url( wp_login_url( self::get_current_clean_url() ) )
 					)
 				);
@@ -971,7 +973,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			$editing_post = $edit_id > 0 ? self::validate_edit_id( $edit_id, $post_type ) : null;
 
 			if ( $edit_id > 0 && ! $editing_post ) {
-				return self::notice( 'error', __( 'El registro que intentas editar no existe, no pertenece a este formulario o no tienes permiso para editarlo.', 'uacf' ) );
+				return self::notice( 'error', __( 'The record you are trying to edit does not exist, does not belong to this form, or you do not have permission to edit it.', 'uacf' ) );
 			}
 
 			$mode = $editing_post ? 'edit' : 'create';
@@ -979,10 +981,10 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			if ( 'create' === $mode ) {
 				$can_create = ! empty( $post_type_object->cap->create_posts ) && current_user_can( $post_type_object->cap->create_posts );
 				if ( ! $can_create ) {
-					return self::notice( 'error', __( 'No tienes permisos para crear este tipo de contenido.', 'uacf' ) );
+					return self::notice( 'error', __( 'You do not have permission to create this content type.', 'uacf' ) );
 				}
 			} elseif ( ! current_user_can( 'edit_post', $edit_id ) ) {
-				return self::notice( 'error', __( 'No tienes permisos para editar este registro.', 'uacf' ) );
+				return self::notice( 'error', __( 'You do not have permission to edit this record.', 'uacf' ) );
 			}
 
 			$groups = self::get_field_groups_for_post_type( $post_type );
@@ -1001,16 +1003,16 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			echo '<div class="uacf-form-wrap">';
 
 			if ( isset( $_GET['uacf_status'] ) && 'success' === sanitize_key( wp_unslash( $_GET['uacf_status'] ) ) ) {
-				echo self::notice( 'success', __( 'Guardado correctamente.', 'uacf' ) );
+				echo self::notice( 'success', __( 'Saved successfully.', 'uacf' ) );
 			}
 
 			if ( empty( $groups ) ) {
-				echo self::notice( 'info', __( 'Este tipo de contenido todavía no tiene ningún grupo de campos ACF configurado. El formulario solo gestionará el título y, si existen, las taxonomías.', 'uacf' ) );
+				echo self::notice( 'info', __( 'This content type does not have any ACF field group configured yet. The form will only handle the title and, if any, the taxonomies.', 'uacf' ) );
 			}
 
-			// El filtro puede sugerir un estado, pero resolve_new_post_status()
-			// siempre verifica cap->publish_posts antes de permitir 'publish'
-			// (ver punto 1 de seguridad); nunca se confía ciegamente en el filtro.
+			// The filter may suggest a status, but resolve_new_post_status()
+			// always checks cap->publish_posts before allowing 'publish' (see
+			// security point 1); the filter is never trusted blindly.
 			$requested_status = apply_filters( 'uacf_new_post_status', 'publish', $post_type );
 			$new_post_status  = self::resolve_new_post_status( $post_type_object, $requested_status );
 
@@ -1020,13 +1022,13 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				'new_post'          => array(
 					'post_type'   => $post_type,
 					'post_status' => $new_post_status,
-					/* translators: %s: nombre singular del CPT. */
-					'post_title'  => sprintf( __( '%s (borrador)', 'uacf' ), $singular ),
+					/* translators: %s: CPT singular label. */
+					'post_title'  => sprintf( __( '%s (draft)', 'uacf' ), $singular ),
 				),
 				'field_groups'      => $field_group_keys,
 				'post_title'        => false,
 				'post_content'      => false,
-				'submit_value'      => 'edit' === $mode ? __( 'Actualizar', 'uacf' ) : __( 'Crear', 'uacf' ),
+				'submit_value'      => 'edit' === $mode ? __( 'Update', 'uacf' ) : __( 'Create', 'uacf' ),
 				'updated_message'   => false,
 				'return'            => self::build_return_url( $mode, $edit_id ),
 				'html_before_fields' => self::build_before_fields_html( $post_type, $mode, $edit_id ),
@@ -1035,8 +1037,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			);
 
 			/**
-			 * Permite ajustar los argumentos de acf_form() desde fuera sin
-			 * tocar este snippet.
+			 * Lets acf_form()'s arguments be adjusted from outside without
+			 * touching this snippet.
 			 */
 			$form_args = apply_filters( 'uacf_form_args', $form_args, $post_type, $mode, $edit_id );
 
@@ -1048,7 +1050,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 10 — SHORTCODE
+		// SECTION 10 — SHORTCODE
 		// =====================================================================
 
 		public static function shortcode_callback( $atts ) {
@@ -1057,7 +1059,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		// =====================================================================
-		// SECCIÓN 11 — BLOQUE DE GUTENBERG + JAVASCRIPT DEL EDITOR
+		// SECTION 11 — GUTENBERG BLOCK REGISTRATION + EDITOR JAVASCRIPT
 		// =====================================================================
 
 		public static function register_block() {
@@ -1082,9 +1084,9 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		}
 
 		/**
-		 * Encola el JS del bloque SOLO en el editor de Gutenberg (nunca en el
-		 * front-end), inyectado como script en línea sin necesidad de un
-		 * archivo .js aparte, compatible con Code Snippets.
+		 * Enqueues the block's JS ONLY in the Gutenberg editor (never on
+		 * the front-end), injected as an inline script with no need for a
+		 * separate .js file, compatible with Code Snippets.
 		 */
 		public static function enqueue_editor_assets() {
 			$handle = 'uacf-block-editor';
@@ -1126,7 +1128,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 	var Placeholder = components.Placeholder;
 	var ServerSideRender = serverSideRender;
 
-	var postTypeChoices = [ { value: '', label: __( 'Selecciona un tipo de contenido…', 'uacf' ) } ];
+	var postTypeChoices = [ { value: '', label: __( 'Select a content type…', 'uacf' ) } ];
 	if ( window.uacfBlockData && window.uacfBlockData.postTypes ) {
 		window.uacfBlockData.postTypes.forEach( function ( item ) {
 			postTypeChoices.push( { value: item.value, label: item.label } );
@@ -1135,7 +1137,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 	blocks.registerBlockType( 'uacf/universal-acf-form', {
 		title: __( 'Universal ACF Form', 'uacf' ),
-		description: __( 'Formulario front-end universal para crear o editar registros de cualquier Custom Post Type con sus campos ACF.', 'uacf' ),
+		description: __( 'Universal front-end form to create or edit records of any Custom Post Type together with its ACF fields.', 'uacf' ),
 		icon: 'feedback',
 		category: 'widgets',
 		attributes: {
@@ -1154,9 +1156,9 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				{},
 				el(
 					PanelBody,
-					{ title: __( 'Ajustes de Universal ACF Form', 'uacf' ) },
+					{ title: __( 'Universal ACF Form settings', 'uacf' ) },
 					el( SelectControl, {
-						label: __( 'Tipo de contenido (CPT)', 'uacf' ),
+						label: __( 'Content type (CPT)', 'uacf' ),
 						value: attributes.postType,
 						options: postTypeChoices,
 						onChange: function ( value ) {
@@ -1171,7 +1173,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				body = el( Placeholder, {
 					icon: 'feedback',
 					label: __( 'Universal ACF Form', 'uacf' ),
-					instructions: __( 'Selecciona un tipo de contenido en el panel lateral para previsualizar el formulario.', 'uacf' )
+					instructions: __( 'Select a content type in the sidebar to preview the form.', 'uacf' )
 				} );
 			} else if ( ServerSideRender ) {
 				body = el( ServerSideRender, {
@@ -1179,7 +1181,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 					attributes: attributes
 				} );
 			} else {
-				body = el( 'p', {}, __( 'Vista previa no disponible: falta el componente ServerSideRender.', 'uacf' ) );
+				body = el( 'p', {}, __( 'Preview unavailable: the ServerSideRender component is missing.', 'uacf' ) );
 			}
 
 			return el( 'div', wrapperProps, inspector, body );
@@ -1193,7 +1195,7 @@ JS;
 		}
 
 		// =====================================================================
-		// SECCIÓN 12 — ESTILOS MÍNIMOS
+		// SECTION 12 — MINIMAL STYLES
 		// =====================================================================
 
 		public static function enqueue_frontend_styles() {
@@ -1225,7 +1227,7 @@ CSS;
 } // class_exists
 
 // =============================================================================
-// ARRANQUE
+// BOOTSTRAP
 // =============================================================================
 
 if ( ! has_action( 'plugins_loaded', array( 'UACF_Universal_Form', 'init' ) ) ) {

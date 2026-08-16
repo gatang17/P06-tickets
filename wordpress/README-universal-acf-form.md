@@ -1,188 +1,188 @@
-# Universal ACF Form — instrucciones de instalación y uso
+# Universal ACF Form — installation and usage instructions
 
-Archivo: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
+File: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
 
-## Novedades v1.1.0
+## What's new in v1.1.0 / v1.1.1
 
-- **Publicación con capacidad real**: si el estado solicitado para un post
-  nuevo es `publish`, ahora se comprueba `current_user_can($post_type_object->cap->publish_posts)`.
-  Si el usuario puede crear (`create_posts`) pero no publicar, el registro se
-  guarda como `draft`. Ningún filtro externo (`uacf_new_post_status`) puede
-  saltarse esta comprobación.
-- **Taxonomías con `assign_terms`**: antes de mostrar los controles de una
-  taxonomía o de guardar su selección, se verifica
-  `current_user_can($tax_object->cap->assign_terms)`. Una taxonomía sin esa
-  capacidad para el usuario actual no se renderiza ni se guarda.
-- **`update_field()` con Field Key**: el campo `_code` ahora se actualiza con
-  `update_field($code_field['key'], $code, $post_id)` (Field Key, no Field
-  Name), conservando además el post meta plano con el Field Name.
-- **Redirección tras crear (corregida en v1.1.1)**: ya no se usa
-  `wp_safe_redirect()` + `exit` dentro de `acf/save_post` (eso cortaba en
-  seco cualquier callback posterior de ACF u otros plugins colgado del mismo
-  hook). En su lugar, el argumento `return` de `acf_form()` para el modo
-  crear se construye con el placeholder **oficial** de ACF `%post_id%`
-  (`?uacf_status=success&edit_id=%post_id%`), que ACF sustituye por el ID
-  real una vez terminado *todo* el proceso de guardado, y es ACF quien
-  ejecuta el redirect final. El modo editar sigue usando el `edit_id` real
-  ya conocido.
+- **Publishing with a real capability check**: if the requested status for a
+  new post is `publish`, the system now checks
+  `current_user_can($post_type_object->cap->publish_posts)`. If the user can
+  create (`create_posts`) but not publish, the record is saved as `draft`.
+  No external filter (`uacf_new_post_status`) can bypass this check.
+- **Taxonomies with `assign_terms`**: before showing a taxonomy's controls or
+  saving its selection, the system verifies
+  `current_user_can($tax_object->cap->assign_terms)`. A taxonomy the current
+  user lacks that capability for is neither rendered nor saved.
+- **`update_field()` with the Field Key**: the `_code` field is now updated
+  with `update_field($code_field['key'], $code, $post_id)` (Field Key, not
+  Field Name), while still keeping the plain post meta under the Field Name.
+- **Redirect after creating (fixed in v1.1.1)**: `wp_safe_redirect()` + `exit`
+  inside `acf/save_post` is no longer used (that would abruptly cut off any
+  later ACF or third-party callback hooked to the same action). Instead, the
+  `return` argument of `acf_form()` for create mode is built with ACF's
+  **official** `%post_id%` placeholder
+  (`?uacf_status=success&edit_id=%post_id%`), which ACF substitutes with the
+  real ID once the *entire* save process has finished, and it's ACF that
+  performs the final redirect. Edit mode still uses the real, already-known
+  `edit_id`.
 
-## 1. Cómo pegarlo en Code Snippets
+## 1. How to paste it into Code Snippets
 
-1. Abre el archivo `universal-acf-form-block.php` y copia **todo** su contenido.
-2. En WordPress ve a **Code Snippets → Add New**.
-3. Pega el código en el editor, pero **elimina la primera línea `<?php`**.
-   Code Snippets ya interpreta el editor como PHP; incluir la etiqueta de
-   apertura provocaría un error de sintaxis.
-4. En "Ajustes del snippet", elige **"Run snippet everywhere"** (ejecutar en
-   todo el sitio: front-end + admin), ya que el sistema necesita ejecutarse
-   tanto en el editor de Gutenberg (admin) como en el front-end.
-5. Guarda y **activa** el snippet.
+1. Open the `universal-acf-form-block.php` file and copy **all** of its
+   contents.
+2. In WordPress, go to **Code Snippets → Add New**.
+3. Paste the code into the editor, but **remove the first line `<?php`**.
+   Code Snippets already treats the editor as PHP; including the opening
+   tag would cause a syntax error.
+4. Under "Snippet Settings", choose **"Run snippet everywhere"** (the whole
+   site: front-end + admin), since the system needs to run both in the
+   Gutenberg editor (admin) and on the front-end.
+5. Save and **activate** the snippet.
 
-Si en lugar de Code Snippets prefieres usarlo como archivo de un mu-plugin
-(`wp-content/mu-plugins/universal-acf-form-block.php`), dejá el archivo tal
-cual está, con el `<?php` incluido.
+If instead you prefer to use it as an mu-plugin file
+(`wp-content/mu-plugins/universal-acf-form-block.php`), leave the file
+as-is, with the `<?php` tag included.
 
-## 2. Cómo insertar y configurar el bloque en Gutenberg
+## 2. How to insert and configure the block in Gutenberg
 
-1. Edita cualquier entrada o página.
-2. Añade un bloque nuevo y busca **"Universal ACF Form"**.
-3. Insértalo. Verás un placeholder pidiendo seleccionar un tipo de contenido.
-4. Abre el panel lateral (Configuración del bloque) → **"Ajustes de Universal
-   ACF Form"** → selector **"Tipo de contenido (CPT)"**.
-5. Elige el Custom Post Type. El editor mostrará automáticamente una vista
-   previa real del formulario (usa `ServerSideRender`, por lo que es el mismo
-   HTML que verá el visitante).
-6. Publica/actualiza la página. En el front-end, el formulario:
-   - Si no hay `?edit_id=` en la URL → modo **crear**.
-   - Si hay `?edit_id=123` en la URL y el usuario puede editar ese post →
-     modo **editar**, precargado con sus datos.
+1. Edit any post or page.
+2. Add a new block and search for **"Universal ACF Form"**.
+3. Insert it. You'll see a placeholder asking you to select a content type.
+4. Open the sidebar (Block settings) → **"Universal ACF Form settings"** →
+   **"Content type (CPT)"** selector.
+5. Choose the Custom Post Type. The editor will automatically show a real
+   preview of the form (it uses `ServerSideRender`, so it's the same HTML
+   the visitor will see).
+6. Publish/update the page. On the front-end, the form:
+   - If there's no `?edit_id=` in the URL → **create** mode.
+   - If there's `?edit_id=123` in the URL and the user can edit that post →
+     **edit** mode, pre-filled with its data.
 
-También puedes usar el shortcode de respaldo en cualquier lugar que acepte
-shortcodes:
+You can also use the fallback shortcode anywhere shortcodes are accepted:
 
 ```
-[universal_acf_form post_type="tu_post_type_key"]
+[universal_acf_form post_type="your_post_type_key"]
 ```
 
-Ambos (bloque y shortcode) llaman a la **misma función PHP** de renderizado
-(`UACF_Universal_Form::render_form()`), por lo que no hay lógica duplicada.
+Both (block and shortcode) call the **same PHP function** for rendering
+(`UACF_Universal_Form::render_form()`), so there's no duplicated logic.
 
-## 3. Cómo descubre los CPT y los campos (resumen técnico)
+## 3. How it discovers CPTs and fields (technical summary)
 
 - **CPT**: `get_post_types( array( 'public' => true, 'show_ui' => true ), 'objects' )`,
-  excluyendo una lista fija de post types internos de WordPress/ACF/Gutenberg
+  excluding a fixed list of internal WordPress/ACF/Gutenberg post types
   (`attachment`, `revision`, `nav_menu_item`, `acf-field`, `acf-field-group`,
-  `wp_block`, `wp_template`, `wp_template_part`, `wp_navigation`, etc.). No hay
-  ningún CPT propio de tu aplicación escrito en el código.
-- **Grupos ACF**: `acf_get_field_groups( array( 'post_type' => $post_type ) )`.
-  ACF ya filtra automáticamente por grupos **activos** y evalúa las Location
-  Rules configuradas en cada grupo.
-- **Campos**: `acf_get_fields( $group )` para cada grupo encontrado. Los
-  campos se renderizan con `acf_form()`, que es quien realmente interpreta
-  tipo de campo, choices, condicionales, min/max, return format, etc. — este
-  snippet nunca "reinventa" el renderizado de cada tipo de campo.
-- **Taxonomías**: `get_object_taxonomies( $post_type, 'objects' )`, filtrando
-  a taxonomías públicas con `show_ui`. Los términos se cargan con
-  `get_terms( array( 'hide_empty' => false ) )` y se guardan con
+  `wp_block`, `wp_template`, `wp_template_part`, `wp_navigation`, etc.).
+  There is no CPT of your own application hardcoded in the code.
+- **ACF groups**: `acf_get_field_groups( array( 'post_type' => $post_type ) )`.
+  ACF automatically filters by **active** groups and evaluates the Location
+  Rules configured on each group.
+- **Fields**: `acf_get_fields( $group )` for each group found. The fields
+  are rendered with `acf_form()`, which is what actually interprets field
+  type, choices, conditional logic, min/max, return format, etc. — this
+  snippet never "reinvents" the rendering of each field type.
+- **Taxonomies**: `get_object_taxonomies( $post_type, 'objects' )`, filtered
+  to public taxonomies with `show_ui`. Terms are loaded with
+  `get_terms( array( 'hide_empty' => false ) )` and saved with
   `wp_set_object_terms()`.
-- **Prefijo**: `inventory_get_prefix( $post_type )` calcula el prefijo de 3
-  letras a partir del propio post type key (sin tablas manuales).
-- **Campo de código**: se busca, entre los campos de nivel superior del CPT,
-  el primer campo de tipo `text` cuyo `name` termine en `_code`.
-- **Campo de título**: se busca el primer campo de texto obligatorio (no
-  `_code`); si no hay ninguno obligatorio, el primer campo de texto (no
-  `_code`); si no hay ninguno, se usa el label singular del CPT + código (o + ID).
+- **Prefix**: `inventory_get_prefix( $post_type )` computes the 3-letter
+  prefix from the post type key itself (no manual lookup tables).
+- **Code field**: the system looks, among the CPT's top-level fields, for
+  the first field of type `text` whose `name` ends in `_code`.
+- **Title field**: the system looks for the first required text field (not
+  `_code`); if none is required, the first text field (not `_code`); if
+  none exists, it uses the CPT's singular label + code (or + ID).
 
-Todo esto se cachea **en memoria durante la petición** (variables estáticas),
-nunca en transients persistentes, para que un campo ACF nuevo aparezca de
-inmediato sin esperas de caché.
+All of this is cached **in memory for the duration of the request** (static
+variables), never in persistent transients, so a new ACF field shows up
+immediately with no caching delay.
 
-## 4. Pruebas antes de eliminar tus formularios anteriores
+## 4. Tests to run before removing your previous forms
 
-Antes de dar de baja cualquier formulario/plugin anterior, comprueba:
+Before decommissioning any previous form/plugin, check:
 
-1. **Descubrimiento de CPT**: el selector del bloque muestra todos tus CPT
-   públicos y ningún post type interno de WordPress.
-2. **Creación**: como usuario con capacidad de crear ese CPT, crea un
-   registro nuevo. Verifica que el post se crea, con el `post_status`
-   esperado y el título generado correctamente.
-3. **Campo `_code`**: si el CPT tiene un campo `..._code`, comprueba que se
-   genera automáticamente con el formato `PREFIJO-001`, es de solo lectura en
-   el formulario, y que no puede editarse manualmente desde el navegador
-   (inspecciona el HTML: debe llevar el atributo `readonly`).
-4. **Duplicados**: envía el formulario de creación dos veces seguidas (usa el
-   botón atrás del navegador y reenvía, o abre dos pestañas) y confirma que
-   nunca se generan dos registros con el mismo código.
-5. **Numeración por CPT**: crea registros en dos CPT distintos y confirma que
-   cada uno lleva su propia numeración independiente.
-6. **Edición**: edita un registro existente vía `?edit_id=ID` y confirma que:
-   - Los campos se precargan con los valores guardados.
-   - El código **no cambia** al guardar de nuevo.
-   - El título se actualiza si cambia el campo del que se deriva.
-7. **Seguridad de `edit_id`**:
-   - Prueba un `edit_id` de un post de **otro CPT** → debe rechazar con un
-     mensaje claro, no debe mostrar el formulario.
-   - Prueba un `edit_id` inexistente → debe rechazar con mensaje claro.
-   - Con un usuario sin permiso para editar ese post concreto → debe
-     rechazar (`current_user_can( 'edit_post', $id )`).
-8. **Permisos de creación**: con un usuario sin capacidad de creación para
-   ese CPT, confirma que el formulario muestra un mensaje de "no tienes
-   permisos" y **no** se llega a renderizar `acf_form()`.
-9. **Usuario no autenticado**: visita la página sin sesión iniciada y
-   confirma que se muestra un enlace de inicio de sesión, no el formulario.
-10. **Taxonomías**:
-    - Una taxonomía sin términos muestra el mensaje "No hay términos... "
-      en lugar de un selector vacío.
-    - Selecciona/deselecciona términos y confirma que se guardan
-      correctamente y que una deselección total limpia la taxonomía.
-    - Confirma que **no** aparece ninguna forma de crear términos nuevos.
-11. **Imágenes y archivos**: si algún grupo ACF tiene un campo Image o File,
-    confirma que el selector de medios (modal de WordPress) abre y funciona
-    en el front-end, y que el archivo se guarda correctamente en el post.
-12. **Condicional Logic**: si algún campo tiene lógica condicional
-    configurada en ACF, confirma que se comporta igual en el front-end que
-    en el admin.
-13. **CPT nuevo sin tocar el snippet**: crea un CPT completamente nuevo (con
-    su grupo ACF) desde el admin y confirma que aparece automáticamente en
-    el selector del bloque **sin modificar este archivo**.
-14. **Campo ACF nuevo sin tocar el snippet**: añade un campo nuevo a un grupo
-    ACF existente y confirma que aparece automáticamente en el formulario.
-15. **ACF desactivado**: desactiva ACF temporalmente (en un entorno de
-    pruebas) y confirma que el bloque muestra un mensaje claro en vez de una
-    pantalla en blanco o un error fatal.
+1. **CPT discovery**: the block's selector shows all your public CPTs and
+   no internal WordPress post type.
+2. **Creation**: as a user with permission to create that CPT, create a new
+   record. Verify the post is created with the expected `post_status` and
+   a correctly generated title.
+3. **`_code` field**: if the CPT has a `..._code` field, verify it's
+   generated automatically in the `PREFIX-001` format, is read-only in the
+   form, and cannot be edited manually from the browser (inspect the HTML:
+   it must carry the `readonly` attribute).
+4. **Duplicates**: submit the creation form twice in a row (use the
+   browser's back button and resubmit, or open two tabs) and confirm that
+   two records with the same code are never generated.
+5. **Numbering per CPT**: create records in two different CPTs and confirm
+   each one has its own independent numbering.
+6. **Editing**: edit an existing record via `?edit_id=ID` and confirm that:
+   - The fields are pre-filled with the saved values.
+   - The code **does not change** when saving again.
+   - The title updates if the field it's derived from changes.
+7. **`edit_id` security**:
+   - Try an `edit_id` belonging to a post of **another CPT** → it must be
+     rejected with a clear message, the form must not be shown.
+   - Try a non-existent `edit_id` → it must be rejected with a clear
+     message.
+   - With a user who lacks permission to edit that specific post → it must
+     be rejected (`current_user_can( 'edit_post', $id )`).
+8. **Creation permissions**: with a user who lacks the capability to create
+   that CPT, confirm the form shows a "you don't have permission" message
+   and `acf_form()` is **not** rendered at all.
+9. **Unauthenticated user**: visit the page without a logged-in session and
+   confirm a login link is shown, not the form.
+10. **Taxonomies**:
+    - A taxonomy with no terms shows the "No terms available..." message
+      instead of an empty selector.
+    - Select/deselect terms and confirm they save correctly, and that a
+      full deselection clears the taxonomy.
+    - Confirm there is **no** way to create new terms.
+11. **Images and files**: if any ACF group has an Image or File field,
+    confirm the media picker (WordPress modal) opens and works on the
+    front-end, and the file is saved correctly on the post.
+12. **Conditional Logic**: if any field has conditional logic configured in
+    ACF, confirm it behaves the same on the front-end as in the admin.
+13. **New CPT with no snippet changes**: create a brand-new CPT (with its
+    ACF group) from the admin and confirm it automatically appears in the
+    block's selector **without modifying this file**.
+14. **New ACF field with no snippet changes**: add a new field to an
+    existing ACF group and confirm it automatically appears in the form.
+15. **ACF deactivated**: temporarily deactivate ACF (in a test environment)
+    and confirm the block shows a clear message instead of a blank screen
+    or a fatal error.
 
-## 5. Limitaciones técnicas reales
+## 5. Real technical limitations
 
-- **ACF Free vs. Pro**: los tipos de campo Repeater, Flexible Content,
-  Gallery, Clone y las páginas de opciones son exclusivos de ACF Pro y no
-  están contemplados (ni son necesarios) en este sistema.
-- **Campos anidados**: la detección automática de los campos "código" y
-  "título" solo examina los campos de **nivel superior** de cada grupo ACF
-  (independientemente del orden en que estén colocados). Si un campo de
-  texto está anidado dentro de un campo de tipo "Group", no se tiene en
-  cuenta para esta detección automática (sí se renderiza igualmente en el
-  formulario, vía `acf_form()`).
-- **Vista previa en el editor**: `ServerSideRender` hace una petición real a
-  la REST API para renderizar el bloque con `render_callback`, por lo que la
-  vista previa puede mostrar mensajes de permisos/estado según el usuario
-  conectado al editor (comportamiento esperado, no es un error).
-- **Bloques dentro de patrones/bloques reutilizables**: `acf_form_head()` se
-  ejecuta para cualquier usuario autenticado en cualquier página del
-  front-end (no se limita a páginas que "parezcan" contener el bloque), para
-  garantizar que el guardado funcione también dentro de patrones, bloques
-  reutilizables o plantillas de tema de bloques donde detectar el bloque de
-  antemano no es fiable. Es una llamada ligera (no bloqueante) pero implica
-  encolar los assets de ACF en cada página vista por un usuario conectado.
-- **Numeración de códigos**: se basa en un contador atómico guardado en
-  `wp_options` (`UPDATE ... = valor + 1`), no en un plugin de terceros ni en
-  una tabla personalizada. Esto evita duplicados por condiciones de carrera
-  o registros eliminados, pero significa que el contador nunca "reutiliza"
-  números aunque se borren registros (comportamiento intencional).
-- **Redirect tras guardar**: usa el parámetro nativo `return` de `acf_form()`
-  hacia la propia URL de la página (con `?uacf_status=success`), evitando así
-  reenvíos duplicados al refrescar. No usamos ningún parámetro/placeholder de
-  ACF no documentado.
-- **Multisite / caché de página completa**: si el sitio usa un plugin de
-  caché de página completa, asegúrate de excluir de la caché las páginas que
-  contengan este bloque para usuarios autenticados (recomendación estándar
-  para cualquier formulario dinámico en WordPress).
+- **ACF Free vs. Pro**: the Repeater, Flexible Content, Gallery, and Clone
+  field types, plus options pages, are exclusive to ACF Pro and are not
+  covered by (nor needed for) this system.
+- **Nested fields**: the automatic detection of the "code" and "title"
+  fields only examines each ACF group's **top-level** fields (regardless of
+  the order they're placed in). If a text field is nested inside a "Group"
+  field type, it is not considered for this automatic detection (it is
+  still rendered in the form normally, via `acf_form()`).
+- **Editor preview**: `ServerSideRender` makes a real REST API request to
+  render the block via `render_callback`, so the preview may show
+  permission/status messages depending on the user logged into the editor
+  (expected behavior, not a bug).
+- **Blocks inside patterns/reusable blocks**: `acf_form_head()` runs for any
+  logged-in user on any front-end page (it isn't limited to pages that
+  "appear" to contain the block), to guarantee that saving also works
+  inside patterns, reusable blocks, or block-theme templates where
+  detecting the block ahead of time isn't reliable. It's a lightweight,
+  non-blocking call, but it does mean ACF's assets get enqueued on every
+  page viewed by a logged-in user.
+- **Code numbering**: based on an atomic counter stored in `wp_options`
+  (`UPDATE ... = value + 1`), not on a third-party plugin or a custom
+  table. This avoids duplicates from race conditions or deleted records,
+  but it means the counter never "reuses" numbers even if records are
+  deleted (intentional behavior).
+- **Redirect after saving**: uses `acf_form()`'s native `return` parameter
+  pointing back to the page's own URL (with `?uacf_status=success` and, for
+  new records, ACF's official `%post_id%` placeholder resolved into
+  `edit_id`), avoiding duplicate resubmits on refresh. No undocumented ACF
+  parameter/placeholder is used.
+- **Multisite / full-page caching**: if the site uses a full-page caching
+  plugin, make sure to exclude pages containing this block from the cache
+  for logged-in users (a standard recommendation for any dynamic WordPress
+  form).
