@@ -30,7 +30,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
-	define( 'UACF_VERSION', '1.1.1' );
+	define( 'UACF_VERSION', '1.2.0' );
 }
 
 if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
@@ -1080,13 +1080,59 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 		public static function block_render_callback( $attributes ) {
 			$post_type = isset( $attributes['postType'] ) ? sanitize_key( $attributes['postType'] ) : '';
+
+			// Extra safeguard: never render the real ACF form (render_form() /
+			// acf_form()) when this callback is invoked through the REST API
+			// (e.g. the block editor's block-renderer endpoint). The editor no
+			// longer triggers this at all (ServerSideRender was removed from
+			// the editor JS below), but this guard stays in place in case
+			// anything else — now or in the future — causes a REST-based
+			// render of this block, so an empty/invalid front-end submission
+			// can never be produced from inside the editor.
+			if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+				return self::render_static_preview( $post_type );
+			}
+
 			return self::render_form( $post_type );
+		}
+
+		/**
+		 * Non-interactive preview used as a REST-request safeguard for
+		 * block_render_callback(). Never touches ACF: no acf_form_head(),
+		 * no acf_form(), no field rendering, so ACF's front-end JS
+		 * validation can never fire against it.
+		 */
+		private static function render_static_preview( $post_type ) {
+			$post_type = sanitize_key( $post_type );
+			$available = self::get_available_post_types();
+
+			if ( '' === $post_type || ! isset( $available[ $post_type ] ) ) {
+				$label = __( 'No content type selected', 'uacf' );
+			} else {
+				$post_type_object = $available[ $post_type ];
+				$label            = ! empty( $post_type_object->labels->singular_name ) ? $post_type_object->labels->singular_name : $post_type;
+			}
+
+			return sprintf(
+				'<div class="uacf-static-preview"><p class="uacf-static-preview-title">%1$s</p><p class="uacf-static-preview-meta">%2$s</p><p class="uacf-static-preview-note">%3$s</p></div>',
+				esc_html__( 'Universal ACF Form', 'uacf' ),
+				esc_html(
+					sprintf(
+						/* translators: %s: content type label. */
+						__( 'Post Type: %s', 'uacf' ),
+						$label
+					)
+				),
+				esc_html__( 'The complete form will appear on the front end.', 'uacf' )
+			);
 		}
 
 		/**
 		 * Enqueues the block's JS ONLY in the Gutenberg editor (never on
 		 * the front-end), injected as an inline script with no need for a
-		 * separate .js file, compatible with Code Snippets.
+		 * separate .js file, compatible with Code Snippets. Does not depend
+		 * on wp-server-side-render: the editor never renders the real ACF
+		 * form, only a static, non-interactive preview built in JS.
 		 */
 		public static function enqueue_editor_assets() {
 			$handle = 'uacf-block-editor';
@@ -1094,7 +1140,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			wp_register_script(
 				$handle,
 				false,
-				array( 'wp-blocks', 'wp-element', 'wp-block-editor', 'wp-components', 'wp-i18n', 'wp-server-side-render' ),
+				array( 'wp-blocks', 'wp-element', 'wp-block-editor', 'wp-components', 'wp-i18n' ),
 				UACF_VERSION,
 				true
 			);
@@ -1118,7 +1164,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 		private static function get_block_editor_js() {
 			return <<<'JS'
-( function ( blocks, element, blockEditor, components, i18n, serverSideRender ) {
+( function ( blocks, element, blockEditor, components, i18n ) {
 	var el = element.createElement;
 	var __ = i18n.__;
 	var InspectorControls = blockEditor.InspectorControls;
@@ -1126,13 +1172,22 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 	var PanelBody = components.PanelBody;
 	var SelectControl = components.SelectControl;
 	var Placeholder = components.Placeholder;
-	var ServerSideRender = serverSideRender;
 
 	var postTypeChoices = [ { value: '', label: __( 'Select a content type…', 'uacf' ) } ];
 	if ( window.uacfBlockData && window.uacfBlockData.postTypes ) {
 		window.uacfBlockData.postTypes.forEach( function ( item ) {
 			postTypeChoices.push( { value: item.value, label: item.label } );
 		} );
+	}
+
+	function getSelectedLabel( postType ) {
+		var label = '';
+		postTypeChoices.forEach( function ( item ) {
+			if ( item.value === postType ) {
+				label = item.label;
+			}
+		} );
+		return label || postType;
 	}
 
 	blocks.registerBlockType( 'uacf/universal-acf-form', {
@@ -1168,21 +1223,22 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				)
 			);
 
-			var body;
-			if ( ! attributes.postType ) {
-				body = el( Placeholder, {
-					icon: 'feedback',
-					label: __( 'Universal ACF Form', 'uacf' ),
-					instructions: __( 'Select a content type in the sidebar to preview the form.', 'uacf' )
-				} );
-			} else if ( ServerSideRender ) {
-				body = el( ServerSideRender, {
-					block: 'uacf/universal-acf-form',
-					attributes: attributes
-				} );
-			} else {
-				body = el( 'p', {}, __( 'Preview unavailable: the ServerSideRender component is missing.', 'uacf' ) );
-			}
+			// Deliberately NOT ServerSideRender / acf_form(): rendering the
+			// real ACF form inside the editor made ACF's own front-end
+			// validation JS run against the (empty) preview instance, which
+			// blocked publishing the page with "Validation failed". The
+			// editor now only ever shows this static, non-interactive
+			// summary; the real form is rendered exclusively on the
+			// front-end via render_callback / the shortcode.
+			var instructions = attributes.postType
+				? ( __( 'Post Type:', 'uacf' ) + ' ' + getSelectedLabel( attributes.postType ) + '. ' + __( 'The complete form will appear on the front end.', 'uacf' ) )
+				: __( 'Select a content type in the sidebar. The complete form will appear on the front end.', 'uacf' );
+
+			var body = el( Placeholder, {
+				icon: 'feedback',
+				label: __( 'Universal ACF Form', 'uacf' ),
+				instructions: instructions
+			} );
 
 			return el( 'div', wrapperProps, inspector, body );
 		},
@@ -1190,7 +1246,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			return null;
 		}
 	} );
-} )( window.wp.blocks, window.wp.element, window.wp.blockEditor, window.wp.components, window.wp.i18n, window.wp.serverSideRender );
+} )( window.wp.blocks, window.wp.element, window.wp.blockEditor, window.wp.components, window.wp.i18n );
 JS;
 		}
 
@@ -1220,6 +1276,10 @@ JS;
 .uacf-no-terms { color: #6b6b6b; font-style: italic; margin: 0; }
 input[readonly].acf-is-appended,
 .uacf-form-wrap input[readonly] { background: #f6f7f7; color: #6b6b6b; }
+.uacf-static-preview { border: 1px dashed #c3c4c7; border-radius: 4px; padding: 16px; text-align: center; color: #50575e; }
+.uacf-static-preview-title { font-weight: 600; margin: 0 0 4px; }
+.uacf-static-preview-meta { margin: 0 0 4px; }
+.uacf-static-preview-note { margin: 0; font-style: italic; }
 CSS;
 		}
 	}

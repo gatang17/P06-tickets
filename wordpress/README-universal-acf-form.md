@@ -2,6 +2,28 @@
 
 File: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
 
+## What's new in v1.2.0
+
+- **No more live ACF form inside the block editor.** The editor previously
+  rendered the real `acf_form()` output via `ServerSideRender`, which made
+  ACF's own front-end validation JavaScript run against that (necessarily
+  empty) preview instance. That's what caused **"Validation failed. 1 field
+  requires attention."** to block publishing the *page* that merely
+  contained the block. The editor now shows a static, non-interactive
+  summary only ("Universal ACF Form" / "Post Type: <label>" / "The complete
+  form will appear on the front end."), built entirely in JS — no ACF fields,
+  no `ServerSideRender`, no REST render of the block, nothing to validate.
+- The **CPT selector stays** in the block's Inspector Controls, unchanged.
+- The real form is rendered **only** on the front-end (via `render_callback`
+  and the shortcode), exactly as before.
+- `block_render_callback()` has an added safeguard: if it's ever invoked
+  while `defined('REST_REQUEST') && REST_REQUEST` is true, it returns the
+  same static preview and never calls `render_form()`/`acf_form()` — a
+  defense against any future/alternate code path that renders the block via
+  REST, not just the editor's now-removed `ServerSideRender` usage.
+- The `wp-server-side-render` script dependency was removed from the block
+  editor script registration, since it's no longer used.
+
 ## What's new in v1.1.0 / v1.1.1
 
 - **Publishing with a real capability check**: if the requested status for a
@@ -50,9 +72,10 @@ as-is, with the `<?php` tag included.
 3. Insert it. You'll see a placeholder asking you to select a content type.
 4. Open the sidebar (Block settings) → **"Universal ACF Form settings"** →
    **"Content type (CPT)"** selector.
-5. Choose the Custom Post Type. The editor will automatically show a real
-   preview of the form (it uses `ServerSideRender`, so it's the same HTML
-   the visitor will see).
+5. Choose the Custom Post Type. The editor shows a static summary
+   ("Universal ACF Form" / "Post Type: <label>" / "The complete form will
+   appear on the front end.") — it does **not** render the real ACF form
+   inside the editor (see "What's new in v1.2.0" above for why).
 6. Publish/update the page. On the front-end, the form:
    - If there's no `?edit_id=` in the URL → **create** mode.
    - If there's `?edit_id=123` in the URL and the user can edit that post →
@@ -161,10 +184,13 @@ Before decommissioning any previous form/plugin, check:
   the order they're placed in). If a text field is nested inside a "Group"
   field type, it is not considered for this automatic detection (it is
   still rendered in the form normally, via `acf_form()`).
-- **Editor preview**: `ServerSideRender` makes a real REST API request to
-  render the block via `render_callback`, so the preview may show
-  permission/status messages depending on the user logged into the editor
-  (expected behavior, not a bug).
+- **Editor preview is intentionally static**: the block editor never
+  renders the real ACF form (no `ServerSideRender`, no REST render of the
+  block) — only a non-interactive "Post Type: X" summary. This is by
+  design: rendering the live form inside the editor previously made ACF's
+  front-end validation run against that empty preview instance and blocked
+  publishing the page. `block_render_callback()` also refuses to render the
+  real form if it's ever hit via `REST_REQUEST`, as a safeguard.
 - **Blocks inside patterns/reusable blocks**: `acf_form_head()` runs for any
   logged-in user on any front-end page (it isn't limited to pages that
   "appear" to contain the block), to guarantee that saving also works
