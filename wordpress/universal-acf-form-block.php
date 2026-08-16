@@ -30,7 +30,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
-	define( 'UACF_VERSION', '1.1.0' );
+	define( 'UACF_VERSION', '1.1.1' );
 }
 
 if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
@@ -758,16 +758,14 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 			self::save_taxonomies( $post_type, $post_id );
 
-			if ( 'create' === $mode ) {
-				// Tras crear correctamente, redirigimos al MISMO formulario en
-				// modo edición (?edit_id=<nuevo ID>) para que el usuario vea el
-				// registro recién guardado y para evitar reenvíos duplicados al
-				// refrescar. Este punto del código todavía se ejecuta antes de
-				// que ACF envíe ninguna salida HTML (acf_form_head() se llama
-				// en el hook "wp"), por lo que la redirección es segura aquí.
-				wp_safe_redirect( self::build_return_url( 'edit', $post_id ) );
-				exit;
-			}
+			// La redirección a "?edit_id=<nuevo ID>" tras crear NO se hace aquí
+			// con wp_redirect()/exit: eso cortaría en seco cualquier callback de
+			// 'acf/save_post' registrado después de este (prioridad > 20) tanto
+			// de ACF como de otros plugins. En su lugar, render_form() ya monta
+			// el argumento 'return' de acf_form() con el placeholder oficial
+			// %post_id%, que ACF sustituye por el ID real una vez que TODO el
+			// proceso de guardado (incluido este hook) ha terminado, y es ACF
+			// quien realiza el redirect final por su cuenta.
 		}
 
 		// =====================================================================
@@ -799,6 +797,19 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			return $permalink;
 		}
 
+		/**
+		 * Construye la URL del argumento 'return' de acf_form().
+		 *
+		 * - Modo "edit": conserva el edit_id real ya conocido.
+		 * - Modo "create": usa el placeholder OFICIAL de acf_form(), literal
+		 *   "%post_id%", que ACF sustituye por el ID recién creado después de
+		 *   completar todo el proceso de guardado (incluidos los hooks
+		 *   acf/save_post de este sistema y de cualquier otro plugin). El
+		 *   placeholder se añade fuera de add_query_arg() y nunca se pasa por
+		 *   absint()/sanitize_*() ni por ninguna otra sanitización que pudiera
+		 *   alterar o eliminar los caracteres "%", precisamente para que ACF
+		 *   pueda encontrarlo y reemplazarlo tal cual.
+		 */
 		private static function build_return_url( $mode, $edit_id ) {
 			$base = self::get_current_clean_url();
 			$args = array( 'uacf_status' => 'success' );
@@ -807,7 +818,17 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				$args['edit_id'] = $edit_id;
 			}
 
-			return esc_url_raw( add_query_arg( $args, $base ) );
+			$url = add_query_arg( $args, $base );
+
+			if ( 'create' === $mode ) {
+				// add_query_arg() urlencodearía "%post_id%" si lo pasáramos
+				// dentro de $args, rompiendo la sustitución de ACF. Por eso se
+				// concatena aparte, siempre en texto literal.
+				$separator = ( false === strpos( $url, '?' ) ) ? '?' : '&';
+				$url      .= $separator . 'edit_id=%post_id%';
+			}
+
+			return esc_url_raw( $url );
 		}
 
 		private static function build_before_fields_html( $post_type, $mode, $edit_id ) {

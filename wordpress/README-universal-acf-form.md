@@ -16,10 +16,15 @@ Archivo: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
 - **`update_field()` con Field Key**: el campo `_code` ahora se actualiza con
   `update_field($code_field['key'], $code, $post_id)` (Field Key, no Field
   Name), conservando además el post meta plano con el Field Name.
-- **Redirección tras crear**: al crear un registro nuevo con éxito, el
-  sistema redirige automáticamente al mismo formulario con
-  `?edit_id=<ID recién creado>`, mostrando el registro guardado en modo
-  edición (y sigue evitando reenvíos duplicados del POST).
+- **Redirección tras crear (corregida en v1.1.1)**: ya no se usa
+  `wp_safe_redirect()` + `exit` dentro de `acf/save_post` (eso cortaba en
+  seco cualquier callback posterior de ACF u otros plugins colgado del mismo
+  hook). En su lugar, el argumento `return` de `acf_form()` para el modo
+  crear se construye con el placeholder **oficial** de ACF `%post_id%`
+  (`?uacf_status=success&edit_id=%post_id%`), que ACF sustituye por el ID
+  real una vez terminado *todo* el proceso de guardado, y es ACF quien
+  ejecuta el redirect final. El modo editar sigue usando el `edit_id` real
+  ya conocido.
 
 ## 1. Cómo pegarlo en Code Snippets
 
