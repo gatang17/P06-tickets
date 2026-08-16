@@ -30,7 +30,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
-	define( 'UACF_VERSION', '1.0.0' );
+	define( 'UACF_VERSION', '1.1.0' );
 }
 
 if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
@@ -444,7 +444,12 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		// =====================================================================
 
 		/**
-		 * Taxonomías públicas asociadas a un CPT (excluyendo internas).
+		 * Taxonomías públicas asociadas a un CPT (excluyendo internas) que,
+		 * además, el usuario actual tiene permiso de asignar
+		 * (current_user_can($tax_object->cap->assign_terms)). Al filtrar aquí,
+		 * tanto el renderizado (build_after_fields_html) como el guardado
+		 * (save_taxonomies) respetan automáticamente esta comprobación: una
+		 * taxonomía sin permiso de asignación nunca se muestra ni se guarda.
 		 *
 		 * @return array<string,WP_Taxonomy>
 		 */
@@ -470,6 +475,9 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 					continue;
 				}
 				if ( empty( $tax_object->public ) || empty( $tax_object->show_ui ) ) {
+					continue;
+				}
+				if ( empty( $tax_object->cap->assign_terms ) || ! current_user_can( $tax_object->cap->assign_terms ) ) {
 					continue;
 				}
 				$result[ $tax_name ] = $tax_object;
@@ -502,6 +510,10 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		 * Guarda las taxonomías seleccionadas usando wp_set_object_terms().
 		 * Solo permite seleccionar términos EXISTENTES (nunca crea términos
 		 * nuevos): cada valor se valida con term_exists() antes de guardarlo.
+		 * Solo itera taxonomías devueltas por get_taxonomies_for_post_type(),
+		 * que ya excluye aquellas para las que el usuario actual no tiene
+		 * cap->assign_terms, así que wp_set_object_terms() nunca se llama sin
+		 * esa capacidad verificada.
 		 */
 		private static function save_taxonomies( $post_type, $post_id ) {
 			foreach ( self::get_taxonomies_for_post_type( $post_type ) as $tax_name => $tax_object ) {
@@ -557,6 +569,31 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				return null;
 			}
 			return $post;
+		}
+
+		/**
+		 * Resuelve el post_status con el que se creará un registro nuevo,
+		 * comprobando SIEMPRE la capacidad nativa de publicación del CPT
+		 * (cap->publish_posts). Un filtro externo (uacf_new_post_status)
+		 * puede pedir 'publish', pero si el usuario actual no tiene esa
+		 * capacidad, el registro se degrada a 'draft' de forma obligatoria:
+		 * ningún filtro puede saltarse esta comprobación.
+		 *
+		 * @param WP_Post_Type $post_type_object
+		 * @param mixed        $requested_status
+		 * @return string
+		 */
+		private static function resolve_new_post_status( $post_type_object, $requested_status ) {
+			$status = ( is_string( $requested_status ) && '' !== $requested_status ) ? $requested_status : 'draft';
+
+			if ( 'publish' === $status ) {
+				$can_publish = ! empty( $post_type_object->cap->publish_posts ) && current_user_can( $post_type_object->cap->publish_posts );
+				if ( ! $can_publish ) {
+					return 'draft';
+				}
+			}
+
+			return $status;
 		}
 
 		/**
@@ -700,10 +737,13 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				} else {
 					$code = self::generate_unique_code( $post_type, $code_field['name'] );
 
-					if ( function_exists( 'update_field' ) ) {
-						update_field( $code_field['name'], $code, $post_id );
+					if ( function_exists( 'update_field' ) && ! empty( $code_field['key'] ) ) {
+						// update_field() debe recibir el Field Key de ACF (no el
+						// Field Name) para resolver el campo de forma inequívoca.
+						update_field( $code_field['key'], $code, $post_id );
 					}
-					// Aseguramos también el post meta "plano" explícitamente.
+					// Conservamos también el post meta "plano" con el Field Name,
+					// que es la clave bajo la que se consulta con get_post_meta().
 					update_post_meta( $post_id, $code_field['name'], $code );
 				}
 			}
@@ -717,6 +757,17 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			}
 
 			self::save_taxonomies( $post_type, $post_id );
+
+			if ( 'create' === $mode ) {
+				// Tras crear correctamente, redirigimos al MISMO formulario en
+				// modo edición (?edit_id=<nuevo ID>) para que el usuario vea el
+				// registro recién guardado y para evitar reenvíos duplicados al
+				// refrescar. Este punto del código todavía se ejecuta antes de
+				// que ACF envíe ninguna salida HTML (acf_form_head() se llama
+				// en el hook "wp"), por lo que la redirección es segura aquí.
+				wp_safe_redirect( self::build_return_url( 'edit', $post_id ) );
+				exit;
+			}
 		}
 
 		// =====================================================================
@@ -737,12 +788,8 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 		 * de este sistema), usada como base para el redirect tras guardar.
 		 */
 		private static function get_current_clean_url() {
-			$permalink = false;
 			$queried_id = get_queried_object_id();
-
-			if ( $queried_id ) {
-				$permalink = get_permalink( $queried_id );
-			}
+			$permalink  = $queried_id ? get_permalink( $queried_id ) : false;
 
 			if ( ! $permalink ) {
 				global $wp;
@@ -940,7 +987,11 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				echo self::notice( 'info', __( 'Este tipo de contenido todavía no tiene ningún grupo de campos ACF configurado. El formulario solo gestionará el título y, si existen, las taxonomías.', 'uacf' ) );
 			}
 
-			$new_post_status = apply_filters( 'uacf_new_post_status', 'publish', $post_type );
+			// El filtro puede sugerir un estado, pero resolve_new_post_status()
+			// siempre verifica cap->publish_posts antes de permitir 'publish'
+			// (ver punto 1 de seguridad); nunca se confía ciegamente en el filtro.
+			$requested_status = apply_filters( 'uacf_new_post_status', 'publish', $post_type );
+			$new_post_status  = self::resolve_new_post_status( $post_type_object, $requested_status );
 
 			$form_args = array(
 				'id'                => 'uacf-form-' . $post_type,

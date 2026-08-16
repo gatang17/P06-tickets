@@ -2,6 +2,25 @@
 
 Archivo: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
 
+## Novedades v1.1.0
+
+- **Publicación con capacidad real**: si el estado solicitado para un post
+  nuevo es `publish`, ahora se comprueba `current_user_can($post_type_object->cap->publish_posts)`.
+  Si el usuario puede crear (`create_posts`) pero no publicar, el registro se
+  guarda como `draft`. Ningún filtro externo (`uacf_new_post_status`) puede
+  saltarse esta comprobación.
+- **Taxonomías con `assign_terms`**: antes de mostrar los controles de una
+  taxonomía o de guardar su selección, se verifica
+  `current_user_can($tax_object->cap->assign_terms)`. Una taxonomía sin esa
+  capacidad para el usuario actual no se renderiza ni se guarda.
+- **`update_field()` con Field Key**: el campo `_code` ahora se actualiza con
+  `update_field($code_field['key'], $code, $post_id)` (Field Key, no Field
+  Name), conservando además el post meta plano con el Field Name.
+- **Redirección tras crear**: al crear un registro nuevo con éxito, el
+  sistema redirige automáticamente al mismo formulario con
+  `?edit_id=<ID recién creado>`, mostrando el registro guardado en modo
+  edición (y sigue evitando reenvíos duplicados del POST).
+
 ## 1. Cómo pegarlo en Code Snippets
 
 1. Abre el archivo `universal-acf-form-block.php` y copia **todo** su contenido.
