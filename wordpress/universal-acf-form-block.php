@@ -41,7 +41,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UACF_VERSION' ) ) {
-	define( 'UACF_VERSION', '2.2.0' );
+	define( 'UACF_VERSION', '2.3.0' );
 }
 
 if ( ! defined( 'UACF_NONCE_PREFIX' ) ) {
@@ -132,6 +132,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			add_action( 'init', array( __CLASS__, 'register_blocks' ) );
 			add_action( 'enqueue_block_editor_assets', array( __CLASS__, 'enqueue_editor_assets' ) );
 			add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_frontend_assets' ) );
+			add_action( 'wp_ajax_uacf_search_related_posts', array( __CLASS__, 'ajax_search_related_posts' ) );
 		}
 
 		// =====================================================================
@@ -1055,7 +1056,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			$field_key = isset( $attributes['fieldKey'] ) ? sanitize_text_field( $attributes['fieldKey'] ) : '';
 
 			if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
-				return self::render_static_field_preview( $post_type, $field_key );
+				return self::render_static_field_preview( $post_type, $field_key, $attributes );
 			}
 
 			if ( '' === $post_type ) {
@@ -1094,13 +1095,395 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 				$field['value'] = $field['default_value'];
 			}
 
-			$wrapper = get_block_wrapper_attributes( array( 'class' => 'uacf-field-wrap' ) );
+			// Select / Post Object / Relationship / User / ACF's own Taxonomy
+			// field type are all still plain ACF fields here — none of them
+			// are ever routed through Universal Taxonomy Field's machinery,
+			// which only ever deals with WordPress's own native taxonomies.
+			// Display Mode below applies ONLY to Post Object/Relationship.
+			$wrapper_classes = array( 'uacf-field-wrap', self::field_type_class( $field ) );
+			if ( self::field_is_multiple( $field ) ) {
+				$wrapper_classes[] = 'uacf-field-multiple';
+			}
+			$width = isset( $attributes['widthRecommendation'] ) ? sanitize_key( $attributes['widthRecommendation'] ) : 'auto';
+			if ( in_array( $width, array( 'full', 'half' ), true ) ) {
+				// A hook for the page builder's own CSS/Columns layout —
+				// this class never applies an actual width itself (the block
+				// must never impose two columns on its own).
+				$wrapper_classes[] = 'uacf-field-width-' . $width;
+			}
+
+			$is_relational = in_array( $field['type'], array( 'post_object', 'relationship' ), true );
+			$display_mode  = $is_relational && isset( $attributes['displayMode'] ) ? sanitize_key( $attributes['displayMode'] ) : 'native';
+			$native_needs_fallback_check = ( 'native' === $display_mode && $is_relational && self::field_is_multiple( $field ) );
+			if ( $native_needs_fallback_check ) {
+				$wrapper_classes[] = 'uacf-relational-native-check';
+			}
+
+			$wrapper = get_block_wrapper_attributes( array( 'class' => implode( ' ', $wrapper_classes ) ) );
 
 			ob_start();
-			echo '<div ' . $wrapper . '>';
-			acf_render_field_wrap( $field );
+			echo '<div ' . $wrapper . ( $native_needs_fallback_check ? ' data-uacf-native-fallback="1"' : '' ) . '>';
+			if ( $is_relational && in_array( $display_mode, array( 'compact', 'searchable', 'checkbox' ), true ) ) {
+				self::render_relational_field_control( $field, $display_mode, $post_type );
+			} else {
+				acf_render_field_wrap( $field );
+			}
 			echo '</div>';
 			return ob_get_clean();
+		}
+
+		private static function field_type_class( array $field ) {
+			$type = isset( $field['type'] ) ? $field['type'] : 'text';
+			return 'uacf-field-' . sanitize_html_class( str_replace( '_', '-', $type ) );
+		}
+
+		/**
+		 * Reads the CPT/field-type-appropriate "is this a multi-value field"
+		 * setting directly from the field's own ACF configuration — never
+		 * inferred, never overridden. A single-value field always stays
+		 * single; a multi-value field always stays multiple.
+		 */
+		private static function field_is_multiple( array $field ) {
+			switch ( isset( $field['type'] ) ? $field['type'] : '' ) {
+				case 'checkbox':
+					return true; // Inherently multi-select by nature.
+				case 'relationship':
+					$max = isset( $field['max'] ) ? (int) $field['max'] : 0;
+					return ( 1 !== $max ); // 0 = unlimited, >1 = multiple; only max===1 is single.
+				case 'select':
+				case 'post_object':
+				case 'user':
+					return ! empty( $field['multiple'] );
+				case 'taxonomy':
+					$sub_type = isset( $field['field_type'] ) ? $field['field_type'] : '';
+					return in_array( $sub_type, array( 'multi_select', 'checkbox' ), true );
+				default:
+					return false;
+			}
+		}
+
+		/**
+		 * The CPT whitelist a Post Object/Relationship field's value may
+		 * point to, taken from the field's own configured 'post_type'
+		 * setting (an unrestricted/empty setting falls back to every
+		 * discovered public CPT — never an unfiltered, unbounded query).
+		 */
+		private static function resolve_related_field_post_types( array $field ) {
+			$available  = self::get_available_post_types();
+			$configured = array_filter( isset( $field['post_type'] ) ? (array) $field['post_type'] : array() );
+
+			if ( empty( $configured ) ) {
+				return array_keys( $available );
+			}
+
+			$valid = array();
+			foreach ( $configured as $post_type ) {
+				if ( isset( $available[ $post_type ] ) ) {
+					$valid[] = $post_type;
+				}
+			}
+			return ! empty( $valid ) ? $valid : array_keys( $available );
+		}
+
+		/**
+		 * Normalizes a Post Object/Relationship raw value — whatever real
+		 * ACF Return Format produced it (a single ID, a WP_Post, an array
+		 * of IDs, or an array of WP_Post) — down to a flat list of IDs.
+		 */
+		private static function extract_relation_ids( $value ) {
+			if ( empty( $value ) ) {
+				return array();
+			}
+			$items = is_array( $value ) ? $value : array( $value );
+			$ids   = array();
+			foreach ( $items as $item ) {
+				if ( $item instanceof WP_Post ) {
+					$ids[] = (int) $item->ID;
+				} elseif ( is_array( $item ) && isset( $item['ID'] ) ) {
+					$ids[] = (int) $item['ID'];
+				} elseif ( is_numeric( $item ) ) {
+					$ids[] = (int) $item;
+				}
+			}
+			return array_values( array_unique( array_filter( $ids ) ) );
+		}
+
+		private static function current_user_can_read_post( $post_id ) {
+			$post = get_post( $post_id );
+			if ( ! $post ) {
+				return false;
+			}
+			if ( 'publish' === $post->post_status ) {
+				return true;
+			}
+			return current_user_can( 'read_post', $post_id );
+		}
+
+		/**
+		 * A light, capped query of candidate posts for a relational field's
+		 * Compact Dropdown / Checkbox List (or, with a $search term, for the
+		 * Searchable Dropdown's AJAX endpoint) — restricted to exactly the
+		 * field's own configured post type(s), nothing else.
+		 *
+		 * @return WP_Post[]
+		 */
+		private static function query_relational_candidates( array $post_types, $search = '', $limit = 200 ) {
+			if ( empty( $post_types ) ) {
+				return array();
+			}
+			$query = new WP_Query( array(
+				'post_type'              => $post_types,
+				'post_status'            => 'publish',
+				'posts_per_page'         => $limit,
+				's'                      => $search,
+				'orderby'                => 'title',
+				'order'                  => 'ASC',
+				'perm'                   => 'readable',
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+			) );
+			return $query->posts;
+		}
+
+		/**
+		 * Renders one of the 3 custom Display Modes (Compact Dropdown,
+		 * Searchable Dropdown, Checkbox List) for a Post Object/Relationship
+		 * field. Deliberately reuses ACF's own real front-end input-name
+		 * convention (acf[field_key] / acf[field_key][]) so acf_save_post()/
+		 * acf_validate_save_post() handle the submission exactly as they
+		 * would for ACF's own native markup — no custom save logic needed.
+		 */
+		private static function render_relational_field_control( array $field, $display_mode, $post_type ) {
+			$multiple      = self::field_is_multiple( $field );
+			$field_name    = $multiple ? ( 'acf[' . $field['key'] . '][]' ) : ( 'acf[' . $field['key'] . ']' );
+			$current_ids   = self::extract_relation_ids( isset( $field['value'] ) ? $field['value'] : null );
+			$allowed_types = self::resolve_related_field_post_types( $field );
+
+			echo '<div class="acf-field acf-relational-control" data-key="' . esc_attr( $field['key'] ) . '">';
+			echo '<label>' . esc_html( $field['label'] );
+			if ( ! empty( $field['required'] ) ) {
+				echo ' <span class="acf-required">*</span>';
+			}
+			echo '</label>';
+			if ( ! empty( $field['instructions'] ) ) {
+				echo '<p class="description">' . wp_kses_post( $field['instructions'] ) . '</p>';
+			}
+
+			if ( 'checkbox' === $display_mode ) {
+				self::render_relational_checkbox_list( $field_name, $current_ids, $allowed_types, $multiple );
+			} elseif ( 'searchable' === $display_mode ) {
+				self::render_relational_searchable( $field, $post_type, $field_name, $current_ids, $multiple );
+			} else { // 'compact'
+				self::render_relational_compact_dropdown( $field_name, $current_ids, $allowed_types, $multiple );
+			}
+
+			echo '</div>';
+		}
+
+		/**
+		 * "Checkbox List" — every candidate visibly listed. Only ever used
+		 * when the page builder deliberately chose this Display Mode; it is
+		 * never the default for any Post Object/Relationship field.
+		 */
+		private static function render_relational_checkbox_list( $field_name, array $current_ids, array $allowed_types, $multiple ) {
+			$posts = self::query_relational_candidates( $allowed_types );
+
+			if ( empty( $posts ) ) {
+				echo '<p class="uacf-no-terms">' . esc_html__( 'No items are available to select.', 'uacf' ) . '</p>';
+				return;
+			}
+
+			$input_type = $multiple ? 'checkbox' : 'radio';
+
+			if ( $multiple ) {
+				echo '<input type="hidden" name="' . esc_attr( $field_name ) . '" value="" />';
+			}
+
+			echo '<div class="uacf-relational-checkboxes">';
+			if ( ! $multiple ) {
+				printf(
+					'<label class="uacf-relational-option"><input type="radio" name="%s" value="" %s /> %s</label>',
+					esc_attr( $field_name ),
+					checked( empty( $current_ids ), true, false ),
+					esc_html__( 'None', 'uacf' )
+				);
+			}
+			foreach ( $posts as $post ) {
+				printf(
+					'<label class="uacf-relational-option"><input type="%s" name="%s" value="%d" %s /> %s</label>',
+					esc_attr( $input_type ),
+					esc_attr( $field_name ),
+					(int) $post->ID,
+					checked( in_array( (int) $post->ID, $current_ids, true ), true, false ),
+					esc_html( get_the_title( $post ) )
+				);
+			}
+			echo '</div>';
+		}
+
+		/**
+		 * "Compact Dropdown" — a closed toggle + a panel of real checkboxes
+		 * (never a permanently-open <select multiple size="...">), the same
+		 * accessible disclosure pattern as Universal Taxonomy Field's own
+		 * Multiple + Dropdown style: plain, always-usable HTML with no
+		 * "hidden" attribute server-side (fully functional without JS),
+		 * progressively collapsed into a closed dropdown by
+		 * get_frontend_relational_js(). A client-side search box is added
+		 * automatically once there are more than 8 candidates.
+		 */
+		private static function render_relational_compact_dropdown( $field_name, array $current_ids, array $allowed_types, $multiple ) {
+			$posts = self::query_relational_candidates( $allowed_types );
+
+			if ( empty( $posts ) ) {
+				echo '<p class="uacf-no-terms">' . esc_html__( 'No items are available to select.', 'uacf' ) . '</p>';
+				return;
+			}
+
+			$titles_by_id = array();
+			foreach ( $posts as $post ) {
+				$titles_by_id[ (int) $post->ID ] = get_the_title( $post );
+			}
+
+			$toggle_text = __( 'Select items', 'uacf' );
+			if ( $multiple ) {
+				$selected_count = count( $current_ids );
+				if ( 1 === $selected_count && isset( $titles_by_id[ $current_ids[0] ] ) ) {
+					$toggle_text = $titles_by_id[ $current_ids[0] ];
+				} elseif ( $selected_count > 1 ) {
+					$toggle_text = sprintf(
+						/* translators: %d: number of selected items. */
+						_n( '%d item selected', '%d items selected', $selected_count, 'uacf' ),
+						$selected_count
+					);
+				}
+			} elseif ( ! empty( $current_ids ) && isset( $titles_by_id[ $current_ids[0] ] ) ) {
+				$toggle_text = $titles_by_id[ $current_ids[0] ];
+			}
+
+			if ( $multiple ) {
+				echo '<input type="hidden" name="' . esc_attr( $field_name ) . '" value="" />';
+			}
+
+			printf(
+				'<div class="uacf-relational-dropdown" data-empty-label="%s" data-multi-template="%s">',
+				esc_attr__( 'Select items', 'uacf' ),
+				esc_attr__( '%d items selected', 'uacf' )
+			);
+			printf(
+				'<button type="button" class="uacf-relational-dropdown-toggle" aria-haspopup="true"><span class="uacf-relational-dropdown-label">%s</span></button>',
+				esc_html( $toggle_text )
+			);
+			echo '<div class="uacf-relational-dropdown-panel">';
+			if ( count( $posts ) > 8 ) {
+				printf(
+					'<input type="text" class="uacf-relational-filter-input" placeholder="%s" aria-label="%s" />',
+					esc_attr__( 'Filter…', 'uacf' ),
+					esc_attr__( 'Filter items', 'uacf' )
+				);
+			}
+			$input_type = $multiple ? 'checkbox' : 'radio';
+			if ( ! $multiple ) {
+				printf(
+					'<label class="uacf-relational-option"><input type="radio" name="%s" value="" %s /> %s</label>',
+					esc_attr( $field_name ),
+					checked( empty( $current_ids ), true, false ),
+					esc_html__( 'None', 'uacf' )
+				);
+			}
+			foreach ( $posts as $post ) {
+				printf(
+					'<label class="uacf-relational-option"><input type="%s" name="%s" value="%d" %s /> %s</label>',
+					esc_attr( $input_type ),
+					esc_attr( $field_name ),
+					(int) $post->ID,
+					checked( in_array( (int) $post->ID, $current_ids, true ), true, false ),
+					esc_html( get_the_title( $post ) )
+				);
+			}
+			echo '</div></div>';
+		}
+
+		/**
+		 * "Searchable Dropdown" — search-as-you-type over posts belonging
+		 * ONLY to the field's own configured post type(s), via the
+		 * uacf_search_related_posts AJAX action. Existing selections are
+		 * pre-rendered as chips (each a real hidden input, so the form still
+		 * submits correctly even if JavaScript never runs) with their
+		 * titles read directly — no extra request needed for those.
+		 */
+		private static function render_relational_searchable( array $field, $post_type, $field_name, array $current_ids, $multiple ) {
+			echo '<div class="uacf-relational-searchable" data-field-key="' . esc_attr( $field['key'] ) . '" data-post-type="' . esc_attr( $post_type ) . '" data-multiple="' . ( $multiple ? '1' : '0' ) . '" data-name="' . esc_attr( $field_name ) . '">';
+
+			echo '<div class="uacf-relational-chips">';
+			$shown = 0;
+			foreach ( $current_ids as $id ) {
+				if ( ! $multiple && $shown >= 1 ) {
+					break;
+				}
+				if ( ! self::current_user_can_read_post( $id ) ) {
+					continue;
+				}
+				$title = get_the_title( $id );
+				if ( '' === $title ) {
+					continue;
+				}
+				printf(
+					'<span class="uacf-relational-chip" data-id="%1$d"><input type="hidden" name="%2$s" value="%1$d" /><span class="uacf-relational-chip-label">%3$s</span><button type="button" class="uacf-relational-chip-remove" aria-label="%4$s">&times;</button></span>',
+					(int) $id,
+					esc_attr( $field_name ),
+					esc_html( $title ),
+					esc_attr( sprintf(
+						/* translators: %s: item title. */
+						__( 'Remove %s', 'uacf' ),
+						$title
+					) )
+				);
+				$shown++;
+			}
+			echo '</div>';
+
+			printf(
+				'<input type="text" class="uacf-relational-search-input" placeholder="%s" autocomplete="off" />',
+				esc_attr__( 'Search by title…', 'uacf' )
+			);
+			echo '<div class="uacf-relational-results" hidden></div>';
+			echo '</div>';
+		}
+
+		/**
+		 * AJAX handler backing the Searchable Dropdown. Logged-in only
+		 * (this whole system requires a session anyway), nonce-verified,
+		 * and restricted to exactly the requested field's own configured
+		 * post type(s) — the requested field_key is itself validated
+		 * against the requested post_type's real discovered fields first,
+		 * so this can never be used to search an unrelated post type.
+		 */
+		public static function ajax_search_related_posts() {
+			if ( ! is_user_logged_in() ) {
+				wp_send_json_error( array( 'message' => __( 'You must be logged in.', 'uacf' ) ), 403 );
+			}
+
+			check_ajax_referer( 'uacf_relational_search', 'nonce' );
+
+			$post_type = isset( $_GET['post_type'] ) ? sanitize_key( wp_unslash( $_GET['post_type'] ) ) : '';
+			$field_key = isset( $_GET['field_key'] ) ? sanitize_text_field( wp_unslash( $_GET['field_key'] ) ) : '';
+			$search    = isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '';
+
+			$field = self::get_field_by_key( $post_type, $field_key );
+			if ( ! $field || ! in_array( $field['type'], array( 'post_object', 'relationship' ), true ) ) {
+				wp_send_json_error( array( 'message' => __( 'Invalid field.', 'uacf' ) ), 400 );
+			}
+
+			$allowed_types = self::resolve_related_field_post_types( $field );
+			$posts         = self::query_relational_candidates( $allowed_types, $search, 20 );
+
+			$results = array();
+			foreach ( $posts as $post ) {
+				$results[] = array( 'id' => $post->ID, 'title' => get_the_title( $post ) );
+			}
+
+			wp_send_json_success( $results );
 		}
 
 		/**
@@ -1351,12 +1734,43 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			return self::static_preview_markup( __( 'Universal ACF Form', 'uacf' ), $meta );
 		}
 
-		private static function render_static_field_preview( $post_type, $field_key ) {
+		private static function render_static_field_preview( $post_type, $field_key, array $attributes = array() ) {
 			$field = self::get_field_by_key( $post_type, $field_key );
-			$meta  = $field
-				? sprintf( '%s · %s%s', $field['label'], $field['type'], ! empty( $field['required'] ) ? ' · ' . __( 'Required', 'uacf' ) : '' )
-				: __( 'No field selected', 'uacf' );
-			return self::static_preview_markup( __( 'ACF Field', 'uacf' ), $meta );
+			if ( ! $field ) {
+				return self::static_preview_markup( __( 'ACF Field', 'uacf' ), __( 'No field selected', 'uacf' ) );
+			}
+
+			$parts = array(
+				$field['label'],
+				$field['type'],
+				self::field_is_multiple( $field ) ? __( 'Multiple', 'uacf' ) : __( 'Single', 'uacf' ),
+			);
+			if ( ! empty( $field['required'] ) ) {
+				$parts[] = __( 'Required', 'uacf' );
+			}
+
+			if ( in_array( $field['type'], array( 'post_object', 'relationship' ), true ) ) {
+				$display_mode = isset( $attributes['displayMode'] ) ? sanitize_key( $attributes['displayMode'] ) : 'native';
+				$mode_labels  = array(
+					'native'     => __( 'Native ACF', 'uacf' ),
+					'compact'    => __( 'Compact Dropdown', 'uacf' ),
+					'searchable' => __( 'Searchable Dropdown', 'uacf' ),
+					'checkbox'   => __( 'Checkbox List', 'uacf' ),
+				);
+				$parts[] = isset( $mode_labels[ $display_mode ] ) ? $mode_labels[ $display_mode ] : $mode_labels['native'];
+			}
+
+			$width = isset( $attributes['widthRecommendation'] ) ? sanitize_key( $attributes['widthRecommendation'] ) : 'auto';
+			if ( in_array( $width, array( 'full', 'half' ), true ) ) {
+				$width_labels = array(
+					'full' => __( 'Full', 'uacf' ),
+					'half' => __( 'Half', 'uacf' ),
+				);
+				/* translators: %s: Full or Half. */
+				$parts[] = sprintf( __( 'Recommended width: %s', 'uacf' ), $width_labels[ $width ] );
+			}
+
+			return self::static_preview_markup( __( 'ACF Field', 'uacf' ), implode( ' · ', $parts ) );
 		}
 
 		private static function render_static_taxonomy_preview( $post_type, $taxonomy ) {
@@ -1399,7 +1813,9 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 
 			register_block_type( 'uacf/acf-field', array(
 				'attributes'      => array(
-					'fieldKey' => array( 'type' => 'string', 'default' => '' ),
+					'fieldKey'            => array( 'type' => 'string', 'default' => '' ),
+					'displayMode'         => array( 'type' => 'string', 'default' => 'native' ),
+					'widthRecommendation' => array( 'type' => 'string', 'default' => 'auto' ),
 				),
 				'uses_context'    => array( 'uacf/postType' ),
 				'supports'        => self::block_supports( true ),
@@ -1474,6 +1890,7 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 						'label'    => isset( $field['label'] ) ? $field['label'] : $field['key'],
 						'type'     => isset( $field['type'] ) ? $field['type'] : '',
 						'required' => ! empty( $field['required'] ),
+						'multiple' => self::field_is_multiple( $field ),
 					);
 				}
 				$fields_by_type[ $key ] = $fields;
@@ -1670,13 +2087,17 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 	// rendered in the editor, only a static card, so ACF's front-end
 	// validation JS can never run against the editor.
 	// ---------------------------------------------------------------
+	var RELATIONAL_TYPES = [ 'post_object', 'relationship' ];
+
 	registerBlockType( 'uacf/acf-field', {
 		title: __( 'Universal ACF Field', 'uacf' ),
-		description: __( 'Renders exactly one ACF field from the parent form’s content type.', 'uacf' ),
+		description: __( 'Renders exactly one ACF field from the parent form’s content type — Text, Select, Post Object, Relationship, User, ACF’s own Taxonomy field, etc. are all handled here as plain ACF fields.', 'uacf' ),
 		icon: 'forms',
 		category: 'widgets',
 		attributes: {
-			fieldKey: { type: 'string', default: '' }
+			fieldKey: { type: 'string', default: '' },
+			displayMode: { type: 'string', default: 'native' },
+			widthRecommendation: { type: 'string', default: 'auto' }
 		},
 		usesContext: [ 'uacf/postType' ],
 		supports: UACF_BLOCK_SUPPORTS,
@@ -1699,40 +2120,101 @@ if ( ! class_exists( 'UACF_Universal_Form' ) ) {
 			var fieldsForType = ( window.uacfBlockData && window.uacfBlockData.fields && window.uacfBlockData.fields[ postType ] ) || [];
 			var selected = null;
 			fieldsForType.forEach( function ( f ) {
-				fieldChoices.push( { value: f.key, label: f.label + ' (' + f.name + ')' } );
+				fieldChoices.push( { value: f.key, label: f.label + ' (' + f.name + ') · ' + f.type } );
 				if ( f.key === attributes.fieldKey ) {
 					selected = f;
 				}
 			} );
 
+			var isRelational = !! selected && -1 !== RELATIONAL_TYPES.indexOf( selected.type );
+
+			var panelChildren = [
+				el( SelectControl, {
+					key: 'field-key',
+					label: __( 'Field', 'uacf' ),
+					value: attributes.fieldKey,
+					options: fieldChoices,
+					onChange: function ( value ) {
+						setAttributes( { fieldKey: value, displayMode: 'native', widthRecommendation: 'auto' } );
+					}
+				} )
+			];
+
+			var relationalNotice = null;
+
+			if ( isRelational ) {
+				panelChildren.push( el( SelectControl, {
+					key: 'display-mode',
+					label: __( 'Display Mode', 'uacf' ),
+					value: attributes.displayMode,
+					options: [
+						{ value: 'native', label: __( 'Native ACF', 'uacf' ) },
+						{ value: 'compact', label: __( 'Compact Dropdown', 'uacf' ) },
+						{ value: 'searchable', label: __( 'Searchable Dropdown', 'uacf' ) },
+						{ value: 'checkbox', label: __( 'Checkbox List', 'uacf' ) }
+					],
+					onChange: function ( value ) { setAttributes( { displayMode: value } ); }
+				} ) );
+				panelChildren.push( el( SelectControl, {
+					key: 'width-recommendation',
+					label: __( 'Width Recommendation', 'uacf' ),
+					help: __( 'Advisory only — this block never imposes columns itself. Size a Columns/Group block accordingly.', 'uacf' ),
+					value: attributes.widthRecommendation,
+					options: [
+						{ value: 'auto', label: __( 'Automatic', 'uacf' ) },
+						{ value: 'full', label: __( 'Full Width', 'uacf' ) },
+						{ value: 'half', label: __( 'Half Width', 'uacf' ) }
+					],
+					onChange: function ( value ) { setAttributes( { widthRecommendation: value } ); }
+				} ) );
+
+				if ( 'native' === attributes.displayMode && 'relationship' === selected.type && Notice ) {
+					relationalNotice = el(
+						Notice,
+						{ status: 'warning', isDismissible: false },
+						__( 'Relationship fields work best at full width.', 'uacf' )
+					);
+				}
+			}
+
 			var inspector = el(
 				InspectorControls,
 				{},
-				el(
-					PanelBody,
-					{ title: __( 'Universal ACF Field settings', 'uacf' ) },
-					el( SelectControl, {
-						label: __( 'Field', 'uacf' ),
-						value: attributes.fieldKey,
-						options: fieldChoices,
-						onChange: function ( value ) {
-							setAttributes( { fieldKey: value } );
-						}
-					} )
-				)
+				el( PanelBody, { title: __( 'Universal ACF Field settings', 'uacf' ) }, panelChildren )
 			);
 
-			var meta = selected
-				? ( selected.label + ' · ' + selected.type + ( selected.required ? ' · ' + __( 'Required', 'uacf' ) : '' ) )
-				: __( 'No field selected', 'uacf' );
+			var metaParts = [];
+			if ( selected ) {
+				metaParts.push( selected.label );
+				metaParts.push( selected.type + ' · ' + ( selected.multiple ? __( 'Multiple', 'uacf' ) : __( 'Single', 'uacf' ) ) );
+				if ( selected.required ) {
+					metaParts.push( __( 'Required', 'uacf' ) );
+				}
+				if ( isRelational ) {
+					var modeLabels = {
+						native: __( 'Native ACF', 'uacf' ),
+						compact: __( 'Compact Dropdown', 'uacf' ),
+						searchable: __( 'Searchable Dropdown', 'uacf' ),
+						checkbox: __( 'Checkbox List', 'uacf' )
+					};
+					metaParts.push( modeLabels[ attributes.displayMode ] || modeLabels.native );
+				}
+				if ( 'full' === attributes.widthRecommendation ) {
+					metaParts.push( __( 'Recommended width: Full', 'uacf' ) );
+				} else if ( 'half' === attributes.widthRecommendation ) {
+					metaParts.push( __( 'Recommended width: Half', 'uacf' ) );
+				}
+			} else {
+				metaParts.push( __( 'No field selected', 'uacf' ) );
+			}
 
 			var preview = el( Placeholder, {
 				icon: 'forms',
 				label: __( 'ACF Field', 'uacf' ),
-				instructions: meta
+				instructions: metaParts.join( ' · ' )
 			} );
 
-			return el( 'div', blockProps, inspector, preview );
+			return el( 'div', blockProps, inspector, relationalNotice, preview );
 		},
 		save: function () {
 			return null;
@@ -1960,6 +2442,352 @@ JS;
 			wp_register_script( $script_handle, false, array(), UACF_VERSION, true );
 			wp_add_inline_script( $script_handle, self::get_frontend_taxonomy_js() );
 			wp_enqueue_script( $script_handle );
+
+			$relational_handle = 'uacf-frontend-relational';
+			wp_register_script( $relational_handle, false, array(), UACF_VERSION, true );
+			wp_localize_script( $relational_handle, 'uacfRelationalData', array(
+				'ajaxUrl'               => admin_url( 'admin-ajax.php' ),
+				'nonce'                 => wp_create_nonce( 'uacf_relational_search' ),
+				'selectItemsLabel'      => __( 'Select items', 'uacf' ),
+				'itemsSelectedTemplate' => __( '%d items selected', 'uacf' ),
+				'filterLabel'           => __( 'Filter…', 'uacf' ),
+				'removeLabel'           => __( 'Remove', 'uacf' ),
+			) );
+			wp_add_inline_script( $relational_handle, self::get_frontend_relational_js() );
+			wp_enqueue_script( $relational_handle );
+		}
+
+		/**
+		 * Powers Compact Dropdown, Searchable Dropdown, and the "Native ACF
+		 * didn't initialize" fallback for Post Object/Relationship fields.
+		 */
+		private static function get_frontend_relational_js() {
+			return <<<'JS'
+( function () {
+	function closeRelDropdown( wrap ) {
+		var toggle = wrap.querySelector( '.uacf-relational-dropdown-toggle' );
+		var panel = wrap.querySelector( '.uacf-relational-dropdown-panel' );
+		wrap.classList.remove( 'is-open' );
+		if ( toggle ) { toggle.setAttribute( 'aria-expanded', 'false' ); }
+		if ( panel ) { panel.setAttribute( 'hidden', 'hidden' ); }
+	}
+
+	function openRelDropdown( wrap ) {
+		document.querySelectorAll( '.uacf-relational-dropdown.is-open' ).forEach( function ( other ) {
+			if ( other !== wrap ) { closeRelDropdown( other ); }
+		} );
+		var toggle = wrap.querySelector( '.uacf-relational-dropdown-toggle' );
+		var panel = wrap.querySelector( '.uacf-relational-dropdown-panel' );
+		wrap.classList.add( 'is-open' );
+		if ( toggle ) { toggle.setAttribute( 'aria-expanded', 'true' ); }
+		if ( panel ) {
+			panel.removeAttribute( 'hidden' );
+			var filterInput = panel.querySelector( '.uacf-relational-filter-input' );
+			if ( filterInput ) { filterInput.focus(); }
+		}
+	}
+
+	function updateDropdownLabel( wrap ) {
+		var labelEl = wrap.querySelector( '.uacf-relational-dropdown-label' );
+		if ( ! labelEl ) { return; }
+		var emptyLabel = wrap.getAttribute( 'data-empty-label' ) || '';
+		var multiTemplate = wrap.getAttribute( 'data-multi-template' ) || '%d';
+
+		var radios = wrap.querySelectorAll( '.uacf-relational-dropdown-panel input[type="radio"]' );
+		if ( radios.length ) {
+			var checkedRadio = wrap.querySelector( '.uacf-relational-dropdown-panel input[type="radio"]:checked' );
+			if ( ! checkedRadio || '' === checkedRadio.value ) {
+				labelEl.textContent = emptyLabel;
+			} else {
+				var radioLabel = checkedRadio.closest( 'label' );
+				labelEl.textContent = radioLabel ? radioLabel.textContent.trim() : emptyLabel;
+			}
+			return;
+		}
+
+		var checked = wrap.querySelectorAll( '.uacf-relational-dropdown-panel input[type="checkbox"]:checked' );
+		if ( 0 === checked.length ) {
+			labelEl.textContent = emptyLabel;
+		} else if ( 1 === checked.length ) {
+			var singleLabel = checked[ 0 ].closest( 'label' );
+			labelEl.textContent = singleLabel ? singleLabel.textContent.trim() : emptyLabel;
+		} else {
+			labelEl.textContent = multiTemplate.replace( '%d', String( checked.length ) );
+		}
+	}
+
+	function initRelDropdown( wrap ) {
+		var toggle = wrap.querySelector( '.uacf-relational-dropdown-toggle' );
+		var panel = wrap.querySelector( '.uacf-relational-dropdown-panel' );
+		if ( toggle ) { toggle.setAttribute( 'aria-expanded', 'false' ); }
+		if ( panel ) { panel.setAttribute( 'hidden', 'hidden' ); }
+
+		if ( toggle ) {
+			toggle.addEventListener( 'click', function () {
+				if ( wrap.classList.contains( 'is-open' ) ) {
+					closeRelDropdown( wrap );
+				} else {
+					openRelDropdown( wrap );
+				}
+			} );
+		}
+
+		wrap.querySelectorAll( '.uacf-relational-dropdown-panel input[type="checkbox"], .uacf-relational-dropdown-panel input[type="radio"]' ).forEach( function ( input ) {
+			input.addEventListener( 'change', function () { updateDropdownLabel( wrap ); } );
+		} );
+
+		var filterInput = wrap.querySelector( '.uacf-relational-filter-input' );
+		if ( filterInput ) {
+			filterInput.addEventListener( 'input', function () {
+				var term = filterInput.value.toLowerCase();
+				wrap.querySelectorAll( '.uacf-relational-option' ).forEach( function ( optionLabel ) {
+					var text = optionLabel.textContent.toLowerCase();
+					optionLabel.style.display = ( '' === term || -1 !== text.indexOf( term ) ) ? '' : 'none';
+				} );
+			} );
+		}
+	}
+
+	function debounce( fn, wait ) {
+		var timer = null;
+		return function () {
+			var args = arguments;
+			clearTimeout( timer );
+			timer = setTimeout( function () { fn.apply( null, args ); }, wait );
+		};
+	}
+
+	function initSearchable( wrap ) {
+		var input = wrap.querySelector( '.uacf-relational-search-input' );
+		var results = wrap.querySelector( '.uacf-relational-results' );
+		var chipsWrap = wrap.querySelector( '.uacf-relational-chips' );
+		var fieldKey = wrap.getAttribute( 'data-field-key' );
+		var postType = wrap.getAttribute( 'data-post-type' );
+		var name = wrap.getAttribute( 'data-name' );
+		var multiple = '1' === wrap.getAttribute( 'data-multiple' );
+		var data = window.uacfRelationalData;
+
+		if ( ! input || ! results || ! chipsWrap || ! data ) { return; }
+
+		function selectedIds() {
+			var ids = [];
+			chipsWrap.querySelectorAll( '.uacf-relational-chip' ).forEach( function ( chip ) {
+				ids.push( chip.getAttribute( 'data-id' ) );
+			} );
+			return ids;
+		}
+
+		function wireRemove( chip ) {
+			var btn = chip.querySelector( '.uacf-relational-chip-remove' );
+			if ( btn ) {
+				btn.addEventListener( 'click', function () { chip.remove(); } );
+			}
+		}
+
+		chipsWrap.querySelectorAll( '.uacf-relational-chip' ).forEach( wireRemove );
+
+		function addChip( id, title ) {
+			if ( ! multiple ) {
+				chipsWrap.innerHTML = '';
+			} else if ( -1 !== selectedIds().indexOf( String( id ) ) ) {
+				return;
+			}
+
+			var chip = document.createElement( 'span' );
+			chip.className = 'uacf-relational-chip';
+			chip.setAttribute( 'data-id', String( id ) );
+
+			var hidden = document.createElement( 'input' );
+			hidden.type = 'hidden';
+			hidden.name = name;
+			hidden.value = String( id );
+			chip.appendChild( hidden );
+
+			var labelSpan = document.createElement( 'span' );
+			labelSpan.className = 'uacf-relational-chip-label';
+			labelSpan.textContent = title;
+			chip.appendChild( labelSpan );
+
+			var removeBtn = document.createElement( 'button' );
+			removeBtn.type = 'button';
+			removeBtn.className = 'uacf-relational-chip-remove';
+			removeBtn.setAttribute( 'aria-label', ( data.removeLabel || 'Remove' ) + ' ' + title );
+			removeBtn.textContent = '×';
+			chip.appendChild( removeBtn );
+
+			chipsWrap.appendChild( chip );
+			wireRemove( chip );
+		}
+
+		var doSearch = debounce( function ( term ) {
+			if ( '' === term ) {
+				results.hidden = true;
+				results.innerHTML = '';
+				return;
+			}
+			var url = data.ajaxUrl
+				+ '?action=uacf_search_related_posts'
+				+ '&nonce=' + encodeURIComponent( data.nonce )
+				+ '&field_key=' + encodeURIComponent( fieldKey )
+				+ '&post_type=' + encodeURIComponent( postType )
+				+ '&search=' + encodeURIComponent( term );
+
+			fetch( url, { credentials: 'same-origin' } )
+				.then( function ( response ) { return response.json(); } )
+				.then( function ( json ) {
+					results.innerHTML = '';
+					if ( ! json || ! json.success || ! json.data || ! json.data.length ) {
+						results.hidden = true;
+						return;
+					}
+					json.data.forEach( function ( item ) {
+						var button = document.createElement( 'button' );
+						button.type = 'button';
+						button.className = 'uacf-relational-result';
+						button.textContent = item.title;
+						button.addEventListener( 'click', function () {
+							addChip( item.id, item.title );
+							input.value = '';
+							results.hidden = true;
+							results.innerHTML = '';
+						} );
+						results.appendChild( button );
+					} );
+					results.hidden = false;
+				} )
+				.catch( function () { results.hidden = true; } );
+		}, 300 );
+
+		input.addEventListener( 'input', function () { doSearch( input.value.trim() ); } );
+
+		document.addEventListener( 'click', function ( event ) {
+			if ( ! wrap.contains( event.target ) ) {
+				results.hidden = true;
+			}
+		} );
+	}
+
+	/**
+	 * "Native ACF" Display Mode, multi-value fields only: if ACF's own
+	 * enhanced UI never took over the raw <select multiple> (e.g. its JS
+	 * failed to load or initialize), that raw select would otherwise stay
+	 * visible as a plain scrollable multi-select box. This checks for
+	 * exactly that and, if found, swaps in the same Compact Dropdown used
+	 * elsewhere — built directly from the <select>'s own <option>
+	 * elements, so no extra request or markup is needed, and the exact
+	 * same field name/values ACF expects are preserved.
+	 */
+	function checkNativeFallback() {
+		document.querySelectorAll( '[data-uacf-native-fallback="1"]' ).forEach( function ( wrap ) {
+			var select = wrap.querySelector( 'select[multiple]' );
+			if ( ! select ) { return; }
+			if ( 'none' !== window.getComputedStyle( select ).display ) {
+				buildFallbackDropdown( wrap, select );
+			}
+		} );
+	}
+
+	function buildFallbackDropdown( wrap, select ) {
+		var name = select.getAttribute( 'name' ) || '';
+		var options = Array.prototype.slice.call( select.options );
+		var data = window.uacfRelationalData || {};
+
+		var dropdown = document.createElement( 'div' );
+		dropdown.className = 'uacf-relational-dropdown';
+		dropdown.setAttribute( 'data-empty-label', data.selectItemsLabel || 'Select items' );
+		dropdown.setAttribute( 'data-multi-template', data.itemsSelectedTemplate || '%d items selected' );
+
+		var toggle = document.createElement( 'button' );
+		toggle.type = 'button';
+		toggle.className = 'uacf-relational-dropdown-toggle';
+		toggle.setAttribute( 'aria-haspopup', 'true' );
+		var toggleLabel = document.createElement( 'span' );
+		toggleLabel.className = 'uacf-relational-dropdown-label';
+		toggle.appendChild( toggleLabel );
+
+		var panel = document.createElement( 'div' );
+		panel.className = 'uacf-relational-dropdown-panel';
+
+		var primer = document.createElement( 'input' );
+		primer.type = 'hidden';
+		primer.name = name;
+		primer.value = '';
+		panel.appendChild( primer );
+
+		if ( options.length > 8 ) {
+			var filterInput = document.createElement( 'input' );
+			filterInput.type = 'text';
+			filterInput.className = 'uacf-relational-filter-input';
+			filterInput.placeholder = data.filterLabel || 'Filter…';
+			panel.appendChild( filterInput );
+		}
+
+		var selectedTitles = [];
+		options.forEach( function ( option ) {
+			if ( '' === option.value ) { return; }
+			var optLabel = document.createElement( 'label' );
+			optLabel.className = 'uacf-relational-option';
+			var checkbox = document.createElement( 'input' );
+			checkbox.type = 'checkbox';
+			checkbox.name = name;
+			checkbox.value = option.value;
+			checkbox.checked = option.selected;
+			if ( option.selected ) { selectedTitles.push( option.text ); }
+			optLabel.appendChild( checkbox );
+			optLabel.appendChild( document.createTextNode( ' ' + option.text ) );
+			panel.appendChild( optLabel );
+		} );
+
+		if ( 1 === selectedTitles.length ) {
+			toggleLabel.textContent = selectedTitles[ 0 ];
+		} else if ( selectedTitles.length > 1 ) {
+			toggleLabel.textContent = ( data.itemsSelectedTemplate || '%d items selected' ).replace( '%d', String( selectedTitles.length ) );
+		} else {
+			toggleLabel.textContent = data.selectItemsLabel || 'Select items';
+		}
+
+		dropdown.appendChild( toggle );
+		dropdown.appendChild( panel );
+
+		select.parentNode.insertBefore( dropdown, select );
+		// Disabled, not removed: keeps the original markup available for
+		// inspection while guaranteeing it never also submits a second,
+		// conflicting value alongside our checkboxes (disabled inputs are
+		// never sent with the form).
+		select.setAttribute( 'hidden', 'hidden' );
+		select.disabled = true;
+
+		initRelDropdown( dropdown );
+	}
+
+	document.addEventListener( 'DOMContentLoaded', function () {
+		document.querySelectorAll( '.uacf-relational-dropdown' ).forEach( initRelDropdown );
+		document.querySelectorAll( '.uacf-relational-searchable' ).forEach( initSearchable );
+
+		// A short delay gives ACF's own front-end JS a chance to finish
+		// enhancing the field first, so this only ever acts as a genuine
+		// fallback, never a race against ACF's normal initialization.
+		window.setTimeout( checkNativeFallback, 400 );
+
+		document.addEventListener( 'click', function ( event ) {
+			var openWrap = document.querySelector( '.uacf-relational-dropdown.is-open' );
+			if ( openWrap && ! openWrap.contains( event.target ) ) {
+				closeRelDropdown( openWrap );
+			}
+		} );
+
+		document.addEventListener( 'keydown', function ( event ) {
+			if ( 'Escape' !== event.key ) { return; }
+			var openWrap = document.querySelector( '.uacf-relational-dropdown.is-open' );
+			if ( openWrap ) {
+				var toggle = openWrap.querySelector( '.uacf-relational-dropdown-toggle' );
+				closeRelDropdown( openWrap );
+				if ( toggle ) { toggle.focus(); }
+			}
+		} );
+	} );
+} )();
+JS;
 		}
 
 		private static function get_frontend_taxonomy_js() {
@@ -2088,6 +2916,19 @@ JS;
 .uacf-term-dropdown-panel { margin-top: 4px; }
 .uacf-term-dropdown.is-open .uacf-term-dropdown-panel { position: absolute; z-index: 10; left: 0; right: 0; max-height: 240px; overflow-y: auto; }
 .uacf-submit-button-full { display: block; width: 100%; }
+.uacf-relational-dropdown { position: relative; }
+.uacf-relational-dropdown-toggle { width: 100%; text-align: left; }
+.uacf-relational-dropdown-panel { margin-top: 4px; }
+.uacf-relational-dropdown.is-open .uacf-relational-dropdown-panel { position: absolute; z-index: 10; left: 0; right: 0; max-height: 240px; overflow-y: auto; }
+.uacf-relational-checkboxes, .uacf-relational-option { display: block; }
+.uacf-relational-filter-input { width: 100%; box-sizing: border-box; }
+.uacf-relational-searchable { position: relative; }
+.uacf-relational-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.uacf-relational-chip { display: inline-flex; align-items: center; gap: 4px; }
+.uacf-relational-chip-remove { border: 0; background: transparent; padding: 0; cursor: pointer; line-height: 1; }
+.uacf-relational-results { position: absolute; z-index: 10; left: 0; right: 0; max-height: 240px; overflow-y: auto; display: block; }
+.uacf-relational-results:empty { display: none; }
+.uacf-relational-result { display: block; width: 100%; text-align: left; }
 CSS;
 
 			return apply_filters( 'uacf_frontend_css', $css );

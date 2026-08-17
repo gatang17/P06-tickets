@@ -1,6 +1,55 @@
-# Universal ACF Form v2.2.0 — installation and usage instructions
+# Universal ACF Form v2.3.0 — installation and usage instructions
 
 File: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
+
+## What changed in v2.3.0 — relational ACF fields get their own Display Mode
+
+Select, Post Object, Relationship, User, and ACF's own Taxonomy field type
+are all still plain **ACF fields**, rendered by Universal ACF Field like
+any other — none of them are routed through Universal Taxonomy Field
+(that block only ever deals with native WordPress taxonomies).
+
+For **Post Object** and **Relationship** fields specifically, Universal
+ACF Field's sidebar now shows two extra controls:
+
+- **Display Mode**: *Native ACF* (ACF's own interface — a warning appears
+  in the editor if the field is a Relationship, since those work best at
+  full width), *Compact Dropdown* (a closed toggle that opens into
+  checkboxes, chips/counter text, and a filter box once there are many
+  options — never a permanently-open `<select multiple size="...">`),
+  *Searchable Dropdown* (type-ahead search, restricted server-side to only
+  the field's own configured post type(s)), or *Checkbox List* (every
+  option always visible — an explicit choice, never the default).
+- **Width Recommendation**: *Automatic* / *Full Width* / *Half Width* — a
+  hint only. The block never imposes columns on its own; size a Columns/
+  Group block accordingly.
+
+Whichever mode is used, **Single vs. Multiple is always read from the ACF
+field's own configuration** (`multiple` for Select/Post Object/User, `max`
+for Relationship, inherently multiple for Checkbox) — never converted
+either way — and every custom control submits values using the exact same
+`acf[field_key]` / `acf[field_key][]` naming ACF's own markup uses, so
+`acf_save_post()`/`acf_validate_save_post()` handle them identically to
+ACF's native UI; nothing extra is needed to convert the submitted value
+back to the Return Format ACF expects (Post Object, Post ID, arrays of
+IDs, arrays of `WP_Post` are all read via ACF's own `get_field()`, which
+already resolves according to each field's configured Return Format).
+
+Every Universal ACF Field wrapper also now carries a generic, type-based
+class — `uacf-field-text`, `uacf-field-select`, `uacf-field-post-object`,
+`uacf-field-relationship`, plus `uacf-field-multiple` when applicable, and
+`uacf-field-width-full`/`uacf-field-width-half` for the width hint above —
+for styling from your own CSS. **Native ACF** mode also self-heals on the
+front end: if ACF's own enhanced UI (select2, the relationship search box)
+fails to initialize for any reason, a small script detects the still-
+visible raw `<select multiple>` and swaps in the same Compact Dropdown
+used elsewhere, built directly from that select's own options — visitors
+never see a bare scrollable multi-select box.
+
+See "Real technical limitations" below for what Compact Dropdown/Checkbox
+List candidate queries do and don't account for (ACF's own admin-
+configured taxonomy/return filters on a Relationship field aren't
+replicated), and for the accessibility note on the fallback detection.
 
 ## Where to change how the form LOOKS (read this before touching the file)
 
@@ -150,6 +199,15 @@ to that field's own wrapper `<div>` (via WordPress's real
 The same panel also exposes **spacing** (margin/padding) and **color**
 (text/background) controls per block, and the form/field/message/button
 blocks additionally support **anchor** (an HTML `id`).
+
+Every Universal ACF Field's own wrapper also automatically carries a
+generic, type-based class you can target from your own CSS without adding
+anything manually: `uacf-field-text`, `uacf-field-select`,
+`uacf-field-post-object`, `uacf-field-relationship`, etc. (derived from
+the field's own ACF type), plus `uacf-field-multiple` when the field is
+multi-value and `uacf-field-width-full`/`uacf-field-width-half` when a
+Width Recommendation is set. None of these impose an actual width or
+layout — sizing stays entirely up to Columns/Group blocks and your CSS.
 
 ## 4. Taxonomy picker: Selection Mode × Display Style
 
@@ -307,3 +365,20 @@ ever processed at all).
   placed inside a Universal ACF Form block") rather than crashing.
 - **Full-page caching**: as before, exclude pages containing these blocks
   from full-page cache for logged-in users.
+- **Compact Dropdown / Checkbox List candidate lists** for Post Object/
+  Relationship fields respect the field's own configured post type(s) and
+  post `perm => 'readable'` visibility, but do **not** replicate any
+  further admin-configured Relationship field restrictions (e.g. a
+  taxonomy filter set on the field itself in ACF) — they list every
+  published, readable post of the allowed type(s), capped at 200. The
+  Searchable Dropdown's live AJAX search is capped at 20 results per query
+  and only ever searches by title.
+- **Searchable Dropdown's chip removal** relies on JavaScript; without it,
+  the field still submits whatever hidden inputs were server-rendered for
+  the record's existing selections (safe, just not editable that request).
+- **Native ACF fallback detection** is a best-effort front-end check (does
+  ACF's own raw `<select multiple>` still look un-enhanced after a short
+  delay) — it cannot detect every possible partial-failure mode of ACF's
+  own JS, only the specific "select2/relationship UI never took over at
+  all" case, which is the one that would otherwise leave a bare scrollable
+  multi-select box visible.
