@@ -38,7 +38,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UADV_VERSION' ) ) {
-	define( 'UADV_VERSION', '1.1.0' );
+	define( 'UADV_VERSION', '1.1.2' );
 }
 
 if ( ! defined( 'UADV_MAX_RELATIONSHIP_DEPTH' ) ) {
@@ -334,9 +334,9 @@ if ( ! class_exists( 'UADV_System' ) ) {
 		 * Recursive branch walker for resolve_relationship_path(). At each
 		 * intermediate step it follows EVERY id the Post Object/Relationship
 		 * field holds (via extract_related_ids(), which already accepts
-		 * IDs, WP_Post objects and arrays), recursing once per related
-		 * object that is a valid, readable post of a known CPT — so a
-		 * three-object Relationship in the middle of the path produces
+		 * IDs, WP_Post objects, and arrays of either), recursing once per
+		 * related object that is a valid, readable post of a known CPT — so
+		 * a three-object Relationship in the middle of the path produces
 		 * three separate branches, each continuing independently. Path
 		 * length is fixed and finite (capped by UADV_MAX_RELATIONSHIP_DEPTH
 		 * before this is ever called), so recursion always terminates
@@ -732,7 +732,6 @@ if ( ! class_exists( 'UADV_System' ) ) {
 
 		private static function field_block_defaults() {
 			return array(
-				'className'          => '',
 				'sourceType'         => 'post_title',
 				'fieldKey'           => '',
 				'taxonomy'           => '',
@@ -763,7 +762,6 @@ if ( ! class_exists( 'UADV_System' ) ) {
 
 		private static function link_block_defaults() {
 			return array(
-				'className'        => '',
 				'actionType'       => 'view',
 				'customLabel'      => '',
 				'icon'             => '',
@@ -827,6 +825,96 @@ if ( ! class_exists( 'UADV_System' ) ) {
 			return $wp_block->render();
 		}
 
+		/**
+		 * Renders a record layout recursively while explicitly handing the
+		 * current record context to every nested Universal Data block, AT
+		 * ANY DEPTH. This exists because a dynamic block's automatic
+		 * "pre-render" pass (the one WordPress performs internally to build
+		 * the $content argument for uadv/data-view's own render_callback —
+		 * see the comment on render_data_field_block()) walks the ENTIRE
+		 * innerBlocks tree, including everything nested inside Group/Row/
+		 * Stack/Columns/Column, using WP_Block's normal top-down context
+		 * propagation — which can only ever carry uadv/data-view's own
+		 * attribute-backed context (uadv/postType), never a value computed
+		 * per query result (uadv/recordId). That entire pre-render pass is
+		 * discarded; THIS function is the real, second, per-record pass
+		 * that replaces it, and it must reach every Universal Data Field/
+		 * Link no matter how many layout blocks it is nested inside.
+		 *
+		 * "Row" and "Stack" are Group block VARIATIONS, not separate block
+		 * types — they still parse as blockName 'core/group' with a
+		 * different default layout attribute, so they need no separate
+		 * entry below.
+		 *
+		 * For a Universal Data Field/Link leaf, this ALSO applies the same
+		 * structural wrapper (.uadv-field-slot, data-label, show/hide-label
+		 * classes, text/vertical alignment) that a direct child gets, so
+		 * nesting inside a layout block never silently loses that styling
+		 * hook — previously only top-level fields received it.
+		 *
+		 * For Group/Columns/Column, Gutenberg's own saved markup (classes,
+		 * inline styles, column widths, responsive layout classes) is kept
+		 * completely intact by replaying the block's own innerContent
+		 * (the exact static HTML fragments Gutenberg generated) and
+		 * substituting each null placeholder with this function's own
+		 * recursive, context-aware render of the corresponding child block
+		 * — rather than re-rendering the layout block through a fresh
+		 * WP_Block(), which would only have access to whatever context an
+		 * automatic top-down pass could supply (i.e. never recordId).
+		 *
+		 * @param array  $parsed_block One raw parsed block (any depth).
+		 * @param array  $context      uadv/postType + uadv/recordId for
+		 *                             the CURRENT record.
+		 * @param string $post_type    Needed to resolve field labels for
+		 *                             the .uadv-field-slot wrapper.
+		 * @return string
+		 */
+		private static function render_record_layout_block( array $parsed_block, array $context, $post_type ) {
+			$name = isset( $parsed_block['blockName'] ) ? $parsed_block['blockName'] : '';
+
+			if ( in_array( $name, array( 'uadv/data-field', 'uadv/data-link' ), true ) ) {
+				$inner_attrs = self::merged_cell_attrs( $parsed_block );
+				$cell_html   = self::render_inner_block( $parsed_block, $context );
+				$slot_attrs  = self::build_cell_wrapper_attrs( $inner_attrs, $post_type );
+				return '<div class="uadv-field-slot"' . $slot_attrs . '>' . $cell_html . '</div>';
+			}
+
+			if ( ! in_array( $name, array( 'core/group', 'core/columns', 'core/column' ), true ) ) {
+				// Preserve ordinary design/content blocks placed inside the record
+				// template (Headings, Paragraphs, Images, Icons, Spacers, etc.).
+				// These never depend on uadv/* context, so a normal WP_Block
+				// render is both correct and sufficient for them.
+				return self::render_inner_block( $parsed_block, $context );
+			}
+
+			$inner_blocks  = isset( $parsed_block['innerBlocks'] ) && is_array( $parsed_block['innerBlocks'] ) ? $parsed_block['innerBlocks'] : array();
+			$inner_content = isset( $parsed_block['innerContent'] ) && is_array( $parsed_block['innerContent'] ) ? $parsed_block['innerContent'] : array();
+			$child_index   = 0;
+			$html          = '';
+
+			foreach ( $inner_content as $piece ) {
+				if ( null === $piece ) {
+					if ( isset( $inner_blocks[ $child_index ] ) ) {
+						$html .= self::render_record_layout_block( $inner_blocks[ $child_index ], $context, $post_type );
+					}
+					$child_index++;
+				} else {
+					$html .= $piece;
+				}
+			}
+
+			// Defensive completeness: innerContent's null placeholders should
+			// always match innerBlocks 1:1 (this is WordPress's own parser
+			// invariant), but if content was migrated/recovered into a state
+			// where they don't line up, still render any remaining child
+			// blocks instead of silently dropping their record data.
+			for ( $i = $child_index; $i < count( $inner_blocks ); $i++ ) {
+				$html .= self::render_record_layout_block( $inner_blocks[ $i ], $context, $post_type );
+			}
+
+			return $html;
+		}
+
 		private static function merged_cell_attrs( array $parsed_block ) {
 			$raw      = ( isset( $parsed_block['attrs'] ) && is_array( $parsed_block['attrs'] ) ) ? $parsed_block['attrs'] : array();
 			$name     = isset( $parsed_block['blockName'] ) ? $parsed_block['blockName'] : '';
@@ -862,40 +950,17 @@ if ( ! class_exists( 'UADV_System' ) ) {
 		}
 
 		/**
-		 * Splits a block's className attribute (WordPress core's own
-		 * customClassName support) into individually-sanitized class
-		 * tokens, so an editor-typed class like "inventory_primary_field"
-		 * can be safely merged onto a structural wrapper the PARENT builds
-		 * (<td>, .uadv-field-slot, <th>) — never raw, never as arbitrary
-		 * HTML/attributes, always one sanitize_html_class() call per token.
-		 *
-		 * @return string[]
-		 */
-		private static function extract_custom_classes( array $attrs ) {
-			if ( empty( $attrs['className'] ) || ! is_string( $attrs['className'] ) ) {
-				return array();
-			}
-			$classes = array();
-			foreach ( preg_split( '/\s+/', trim( $attrs['className'] ) ) as $token ) {
-				$token = sanitize_html_class( $token );
-				if ( '' !== $token ) {
-					$classes[] = $token;
-				}
-			}
-			return $classes;
-		}
-
-		/**
-		 * data-label + the field's own custom class(es) + show/hide-label
-		 * classes + text/vertical align, for the structural <td>/
-		 * .uadv-field-slot wrapper the PARENT builds around each repeated
-		 * cell's own rendered output (which keeps its own inner block
-		 * wrapper too — this is IN ADDITION to that, not instead of it).
+		 * data-label + show/hide-label classes + text/vertical align, for
+		 * the structural <td>/.uadv-field-slot wrapper the PARENT builds
+		 * around each repeated cell's own rendered output — used both for
+		 * direct Table <td> cells and for the .uadv-field-slot wrapper
+		 * render_record_layout_block() builds for Grid/List, at any
+		 * nesting depth.
 		 */
 		private static function build_cell_wrapper_attrs( array $attrs, $post_type ) {
 			$label = self::resolve_field_label( $attrs, $post_type );
 
-			$classes = self::extract_custom_classes( $attrs );
+			$classes = array();
 			if ( empty( $attrs['showLabelDesktop'] ) ) {
 				$classes[] = 'uadv-hide-desktop-label';
 			}
@@ -993,28 +1058,6 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				}
 			}
 			return '';
-		}
-
-		/**
-		 * Decides whether a cell's already-rendered HTML should be treated
-		 * as "no output" (and therefore replaced with emptyValueText).
-		 * wp_strip_all_tags() alone can't be trusted here: it strips a
-		 * valid <img> (or a link wrapping one) down to '', which would
-		 * wrongly mark a real Featured Image / ACF Image as empty. A
-		 * genuinely empty string is checked first; failing that, any real
-		 * markup (an <img>, an <a> around one, an icon, etc.) is treated as
-		 * non-empty output on sight, and only markup-free strings fall
-		 * through to the text-stripping check.
-		 */
-		private static function is_rendered_value_empty( $value_html ) {
-			$value_html = (string) $value_html;
-			if ( '' === trim( $value_html ) ) {
-				return true;
-			}
-			if ( false !== strpos( $value_html, '<' ) ) {
-				return false; // Real markup (image, link, etc.) is never "empty".
-			}
-			return '' === trim( wp_strip_all_tags( $value_html ) );
 		}
 
 		private static function compute_taxonomy_cell( array $attrs, $post_type, WP_Post $post ) {
@@ -1134,7 +1177,7 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				$value_html = self::force_image_display( $source_type, $attrs, $post, $post_type );
 			}
 
-			$is_empty = self::is_rendered_value_empty( $value_html );
+			$is_empty = ( '' === trim( wp_strip_all_tags( $value_html ) ) );
 			if ( $is_empty ) {
 				$value_html     = ! empty( $attrs['hideEmptyValue'] ) ? '' : esc_html( '' !== $attrs['emptyValueText'] ? $attrs['emptyValueText'] : '—' );
 				$already_linked = false;
@@ -1387,12 +1430,6 @@ if ( ! class_exists( 'UADV_System' ) ) {
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="list"] table.uadv-table thead { display: none; }
 	__SEL__[data-mobile-layout="scroll-table"] .uadv-table-scroll { overflow-x: auto; }
 	__SEL__ .uadv-grid { grid-template-columns: 1fr; }
-	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] table.uadv-table tr {
-		margin-bottom: var(--uadv-gap, 16px);
-	}
-	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] table.uadv-table tr:last-child {
-		margin-bottom: 0;
-	}
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] td[data-label]::before,
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="list"] td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; display: block; }
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] td[data-label].uadv-hide-mobile-label::before,
@@ -1499,13 +1536,25 @@ CSS;
 				: array();
 
 			$cell_blocks       = array();
+			$record_blocks     = array();
 			$empty_message_raw = null;
 			$pagination_raw    = null;
 
 			foreach ( $parsed_inner as $inner ) {
 				$name = isset( $inner['blockName'] ) ? $inner['blockName'] : '';
 				if ( in_array( $name, array( 'uadv/data-field', 'uadv/data-link' ), true ) ) {
-					$cell_blocks[] = $inner;
+					$cell_blocks[]    = $inner;
+					$record_blocks[] = $inner;
+				} elseif ( in_array( $name, array( 'core/group', 'core/columns', 'core/column' ), true ) ) {
+					// Layout blocks are repeated once per record and receive the
+					// current record context, all the way down to any Universal
+					// Data Field/Link nested inside — see render_record_layout_block().
+					// This is why the editor is allowed to arrange fields visually
+					// with Gutenberg Group, Row, Stack, Columns and Column blocks.
+					// (Table layout intentionally keeps using $cell_blocks only —
+					// direct children — since a <table> row can't host arbitrary
+					// nested layout markup as columns; see the Table branch below.)
+					$record_blocks[] = $inner;
 				} elseif ( 'uadv/data-empty-message' === $name && null === $empty_message_raw ) {
 					$empty_message_raw = $inner;
 				} elseif ( 'uadv/data-pagination' === $name && null === $pagination_raw ) {
@@ -1558,21 +1607,7 @@ CSS;
 					$out .= '<thead><tr>';
 					foreach ( $cell_blocks as $inner ) {
 						$inner_attrs = self::merged_cell_attrs( $inner );
-						$label       = self::resolve_field_label( $inner_attrs, $post_type );
-
-						$th_classes    = self::extract_custom_classes( $inner_attrs );
-						$th_class_attr = ! empty( $th_classes ) ? ' class="' . esc_attr( implode( ' ', $th_classes ) ) . '"' : '';
-
-						// showLabelDesktop = false must not leave a visible
-						// header while only hiding the content's own label:
-						// the <th> stays (so column count/alignment are
-						// unaffected) but its label becomes screen-reader-
-						// only rather than visibly printed.
-						$label_html = ! empty( $inner_attrs['showLabelDesktop'] )
-							? esc_html( $label )
-							: '<span class="screen-reader-text">' . esc_html( $label ) . '</span>';
-
-						$out .= '<th' . $th_class_attr . '>' . $label_html . '</th>';
+						$out        .= '<th>' . esc_html( self::resolve_field_label( $inner_attrs, $post_type ) ) . '</th>';
 					}
 					$out .= '</tr></thead>';
 				}
@@ -1593,6 +1628,13 @@ CSS;
 				$record_link = $entire_clickable ? get_permalink( $record ) : '';
 
 				if ( $is_table ) {
+					// Table keeps using DIRECT Field/Link children only (never
+					// render_record_layout_block()'s Group-walking behavior):
+					// a <table> row can only validly contain <td>/<th> as
+					// children, so nested layout blocks aren't attempted here
+					// — matches "Table mode may continue using direct children
+					// as columns; custom grouped layouts are primarily for
+					// List and Grid modes."
 					$out .= '<tr class="uadv-row"' . ( $record_link ? ( ' data-record-url="' . esc_url( $record_link ) . '" tabindex="0" aria-label="' . esc_attr( sprintf( __( 'View details for %s', 'uadv' ), get_the_title( $record ) ) ) . '"' ) : '' ) . '>';
 					foreach ( $cell_blocks as $inner ) {
 						$inner_attrs = self::merged_cell_attrs( $inner );
@@ -1612,11 +1654,15 @@ CSS;
 						// stay independently clickable (see get_frontend_css()).
 						$out .= '<a class="uadv-card-link-overlay" href="' . esc_url( $record_link ) . '" aria-label="' . esc_attr( sprintf( __( 'View details for %s', 'uadv' ), get_the_title( $record ) ) ) . '"></a>';
 					}
-					foreach ( $cell_blocks as $inner ) {
-						$inner_attrs = self::merged_cell_attrs( $inner );
-						$cell_html   = self::render_inner_block( $inner, $child_context );
-						$slot_attrs  = self::build_cell_wrapper_attrs( $inner_attrs, $post_type );
-						$out        .= '<div class="uadv-field-slot"' . $slot_attrs . '>' . $cell_html . '</div>';
+					// render_record_layout_block() walks Group/Columns/Column
+					// (preserving their exact Gutenberg markup) and, at ANY
+					// nesting depth, hands each Universal Data Field/Link the
+					// current record's context AND wraps it in the same
+					// .uadv-field-slot structure a direct child gets — so
+					// direct fields and fields nested inside layout blocks are
+					// rendered identically.
+					foreach ( $record_blocks as $inner ) {
+						$out .= self::render_record_layout_block( $inner, $child_context, $post_type );
 					}
 					$out .= '</div>';
 				}
@@ -1880,7 +1926,15 @@ CSS;
 		color: { background: true, text: true }
 	};
 
-	var ALLOWED_BLOCKS = [ 'uadv/data-field', 'uadv/data-link', 'uadv/data-empty-message', 'uadv/data-pagination' ];
+	var ALLOWED_BLOCKS = [
+		'uadv/data-field',
+		'uadv/data-link',
+		'uadv/data-empty-message',
+		'uadv/data-pagination',
+		'core/group',
+		'core/columns',
+		'core/column'
+	];
 
 	var postTypeChoices = [ { value: '', label: __( 'Select a content type…', 'uadv' ) } ];
 	( DATA.postTypes || [] ).forEach( function ( item ) { postTypeChoices.push( item ); } );
@@ -2635,17 +2689,6 @@ JS;
 .uadv-grid { display: grid; grid-template-columns: repeat(var(--uadv-grid-cols-desktop, 3), 1fr); gap: var(--uadv-gap, 16px); }
 @media (max-width: 1024px) and (min-width: 783px) {
 	.uadv-grid { grid-template-columns: repeat(var(--uadv-grid-cols-tablet, 2), 1fr); }
-}
-.uadv-data-view[data-desktop-layout="list"] .uadv-grid {
-	grid-template-columns: 1fr;
-}
-.uadv-data-view .screen-reader-text {
-	position: absolute !important;
-	width: 1px;
-	height: 1px;
-	overflow: hidden;
-	clip: rect(1px, 1px, 1px, 1px);
-	white-space: nowrap;
 }
 .uadv-card { position: relative; min-width: 0; }
 .uadv-card-link-overlay { position: absolute; inset: 0; z-index: 1; }
