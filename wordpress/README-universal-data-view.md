@@ -1,4 +1,4 @@
-# Universal Data View v1.0.0 — installation and usage instructions
+# Universal Data View v1.1.0 — installation and usage instructions
 
 File: [`universal-data-view-block.php`](./universal-data-view-block.php)
 
@@ -109,7 +109,7 @@ isn't visible to the current viewer.
   overlay isn't achievable. This case uses a small, optional front-end
   script instead: clicking anywhere in the row that isn't a real link
   navigates to the record; a click that lands on/inside any real `<a>`
-  is explicitly left alone. See §9 for the honest accessibility trade-off
+  is explicitly left alone. See §10 for the honest accessibility trade-off
   this implies, and why a Universal Data Link block is still recommended.
 
 ## 6. How the responsive table→cards transform works
@@ -192,7 +192,92 @@ CSS class(es) + the theme's stylesheet/Customizer. For Badges specifically:
 `.uadv-value-operational { ... }` etc. yourself, wherever you keep your
 site's CSS.
 
-## 9. Real technical limitations
+## 9. What changed in v1.1.0
+
+Six targeted fixes, same architecture (CPT discovery, Field Key validation,
+`WP_Query`, per-instance pagination, Current/Related Record links,
+taxonomies, permissions, editor without `ServerSideRender`, `UADV`
+namespaces, coexistence with Universal ACF Form — none of that changed):
+
+1. **Images were wrongly treated as empty.** `compute_field_cell_value()`
+   decided emptiness with `wp_strip_all_tags()` alone, which strips a valid
+   `<img>` down to `''` — so a Featured Image or an ACF Image field (any
+   Return Format: ID, Array, or URL) was silently replaced by
+   `emptyValueText`. Fixed with a new `is_rendered_value_empty()`: an
+   actually-empty string is checked first; failing that, any real markup
+   (`<` present — an `<img>`, a link wrapping one, etc.) is treated as
+   non-empty on sight; only markup-free strings fall through to the
+   text-stripping check. `emptyValueText` now only ever appears when there
+   truly is no output.
+2. **Relationship Path only followed the first related object.** A
+   Post Object/Relationship field with several items used to resolve just
+   `reset($raw)`. `resolve_relationship_path()` now runs a depth-first
+   branch walk (`walk_relationship_path_branch()`): at every intermediate
+   hop it follows **every** id the field holds (via the existing
+   `extract_related_ids()`, which already accepts IDs, `WP_Post` objects,
+   and arrays), branching into a separate continuation per related object,
+   validating `post_is_readable()` and the target CPT at each hop. Final
+   results from every branch are combined and de-duplicated, then joined
+   with the configured separator. Depth still caps at
+   `UADV_MAX_RELATIONSHIP_DEPTH` (5); a new `UADV_MAX_RELATIONSHIP_FANOUT`
+   (200) caps total resolved leaves so a pathological all-to-all dataset
+   can't produce unbounded output — and since the path length is fixed and
+   finite, recursion always terminates even with cyclical relational data.
+   When Link Destination is Related Record and the final field is also
+   relational, each final object keeps its own individual `<a>` (via the
+   new `format_related_links_list()`, which the old `format_related_links()`
+   now wraps), never one link around a joined string.
+3. **Desktop Layout "List" behaved exactly like "Grid".** Both used
+   `.uadv-grid` with the configured desktop column count. Added
+   `.uadv-data-view[data-desktop-layout="list"] .uadv-grid { grid-template-columns: 1fr; }`
+   to the shared stylesheet, so List is always exactly one column
+   regardless of `gridColumnsDesktop`; Grid keeps its configurable columns
+   and Table keeps its table structure — both untouched.
+4. **A field's custom class only ever reached the inner `<span>`.**
+   Universal Data Field's block-supports `className` (its own Advanced →
+   "Additional CSS class(es)") rendered only on the inner value wrapper,
+   never on the structural cell the parent builds around it. Added
+   `'className' => ''` to `field_block_defaults()`/`link_block_defaults()`
+   and a new `extract_custom_classes()` helper that splits the attribute on
+   whitespace and sanitizes each token individually with
+   `sanitize_html_class()` (never raw, never arbitrary attributes).
+   `build_cell_wrapper_attrs()` now merges those classes onto `<td>`
+   (Table) and `.uadv-field-slot` (Grid/List/Cards) alongside the existing
+   system classes (`uadv-hide-desktop-label` etc.); the matching `<th>` in
+   the table header now carries the same custom class too. The inner
+   block-supports wrapper is unchanged — this is in addition to it, not
+   instead of it. A class like `inventory_primary_field` can now style
+   `.inventory_primary_field { background: …; padding: …; }` for the whole
+   cell, not just its text.
+5. **`showLabelDesktop = false` still left a visible `<th>`.** The table
+   header loop always printed the plain-text label regardless of that
+   setting. It now checks `showLabelDesktop` per column: when off, the
+   `<th>` cell itself still renders (so column count/alignment don't
+   shift) but its label is wrapped in `<span class="screen-reader-text">`
+   instead of being printed visibly. A small `.screen-reader-text` rule
+   (position/clip only, no color) was added to the shared stylesheet so
+   this works even on themes that don't already define that standard WP
+   class. `showLabelMobile` is untouched and continues controlling the
+   `data-label` pseudo-element on mobile.
+6. **Mobile Cards verified and given real separation between records.**
+   Confirmed `<thead>` is fully hidden, no desktop `min-width` carries
+   over, `data-label` survives on every field, and styling via CSS classes
+   works on both the card and each cell. What was missing: collapsed
+   `<tr>` rows ran straight into each other with no structural break. Added
+   `margin-bottom: var(--uadv-gap, 16px)` (reusing the existing gap custom
+   property — the same token Grid/List already use, so no new hardcoded
+   value) to the mobile-cards `<tr>` rule inside the per-instance
+   `<style>` block, with a `:last-child` reset so the list doesn't end in
+   extra space. No colors were added, per the "functional CSS only" rule.
+   The careful specificity balance between the existing show/hide-label
+   rules in that same block was left untouched — the new rule only
+   introduces a different property (`margin-bottom`), so it can't collide.
+
+Verified with `php -l`, `node --check` on all 4 embedded JS/CSS heredoc
+blocks, and a duplicate-method scan after every change; still exactly 5
+`register_block_type()` calls matching 5 `registerBlockType()` calls.
+
+## 10. Real technical limitations
 
 - **Relationship Path + ambiguous target CPT**: when a Post Object/
   Relationship field allows more than one (or any) target post type, the

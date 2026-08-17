@@ -38,11 +38,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UADV_VERSION' ) ) {
-	define( 'UADV_VERSION', '1.0.0' );
+	define( 'UADV_VERSION', '1.1.0' );
 }
 
 if ( ! defined( 'UADV_MAX_RELATIONSHIP_DEPTH' ) ) {
 	define( 'UADV_MAX_RELATIONSHIP_DEPTH', 5 );
+}
+
+if ( ! defined( 'UADV_MAX_RELATIONSHIP_FANOUT' ) ) {
+	// Defensive cap on the TOTAL number of final leaves a branching
+	// Relationship Path may resolve to for one record, independent of
+	// UADV_MAX_RELATIONSHIP_DEPTH — protects against a pathological
+	// "everything relates to everything" dataset producing unbounded
+	// output when every hop branches into many objects.
+	define( 'UADV_MAX_RELATIONSHIP_FANOUT', 200 );
 }
 
 // =============================================================================
@@ -237,35 +246,20 @@ if ( ! class_exists( 'UADV_System' ) ) {
 			return current_user_can( 'read_post', $post_id );
 		}
 
-		private static function extract_first_related_id( $raw ) {
-			if ( empty( $raw ) ) {
-				return 0;
-			}
-			if ( is_array( $raw ) ) {
-				$raw = reset( $raw );
-			}
-			if ( $raw instanceof WP_Post ) {
-				return (int) $raw->ID;
-			}
-			if ( is_array( $raw ) && isset( $raw['ID'] ) ) {
-				return (int) $raw['ID'];
-			}
-			if ( is_numeric( $raw ) ) {
-				return (int) $raw;
-			}
-			return 0;
-		}
-
 		/**
 		 * Follows a structured relationship path — an ordered list of ACF
 		 * Field Keys, never hand-written PHP — starting from one record,
-		 * hopping through Post Object/Relationship fields, and returns the
-		 * FINAL field's formatted value. Every Field Key is validated
-		 * against the CPT it's actually being looked up on at that point in
-		 * the chain (get_field_by_key()), so a key belonging to an
-		 * unrelated post type can never be resolved. Depth is capped at
-		 * UADV_MAX_RELATIONSHIP_DEPTH. A missing/unreadable relation at any
-		 * point yields an empty result rather than an error.
+		 * BRANCHING at every intermediate Post Object/Relationship hop
+		 * (following every related object the field holds, not only the
+		 * first one), and returns the FINAL field's formatted value(s),
+		 * combined and de-duplicated. Every Field Key is validated against
+		 * the CPT it's actually being looked up on at that point in the
+		 * chain (get_field_by_key()), so a key belonging to an unrelated
+		 * post type can never be resolved. Depth is capped at
+		 * UADV_MAX_RELATIONSHIP_DEPTH and total resolved leaves at
+		 * UADV_MAX_RELATIONSHIP_FANOUT. A missing/unreadable relation at
+		 * any point simply doesn't contribute to the result, rather than
+		 * erroring or ever printing Array/Object/undefined.
 		 *
 		 * @param int    $start_post_id
 		 * @param string $start_post_type
@@ -291,45 +285,110 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				return self::$relationship_cache[ $cache_key ];
 			}
 
-			$current_id   = (int) $start_post_id;
-			$current_type = $start_post_type;
-			$result       = '';
-			$last_index   = count( $path ) - 1;
+			// Depth-first walk that branches into every related object at
+			// each intermediate hop; collects one leaf (final field + the
+			// post it's read from) per reachable end of the path.
+			$leaves = array();
+			self::walk_relationship_path_branch( (int) $start_post_id, $start_post_type, $path, 0, $leaves );
 
-			foreach ( $path as $index => $field_key ) {
-				$field = self::get_field_by_key( $current_type, $field_key );
-				if ( ! $field ) {
-					$result = '';
-					break;
+			if ( empty( $leaves ) ) {
+				self::$relationship_cache[ $cache_key ] = '';
+				return '';
+			}
+
+			$link_related = isset( $display_opts['linkDestination'] ) && 'related' === $display_opts['linkDestination'];
+			$separator    = ( isset( $display_opts['separator'] ) && '' !== $display_opts['separator'] ) ? $display_opts['separator'] : ', ';
+
+			$parts = array();
+			$seen  = array();
+
+			foreach ( $leaves as $leaf ) {
+				$field = $leaf['field'];
+				$raw   = get_field( $field['key'], $leaf['post_id'] );
+
+				if ( $link_related && in_array( $field['type'], array( 'post_object', 'relationship' ), true ) ) {
+					// Each final related object keeps its OWN individual
+					// link — never one link wrapping a joined list.
+					$pieces = self::format_related_links_list( $raw, $display_opts );
+				} else {
+					$html   = self::format_field_value( $field, $raw, $display_opts );
+					$pieces = ( '' !== $html ) ? array( $html ) : array();
 				}
 
-				if ( $index < $last_index ) {
-					if ( empty( $field['relational'] ) ) {
-						$result = '';
-						break;
+				foreach ( $pieces as $piece ) {
+					if ( isset( $seen[ $piece ] ) ) {
+						continue; // De-duplicate across branches.
 					}
-					$raw     = get_field( $field['key'], $current_id );
-					$next_id = self::extract_first_related_id( $raw );
-					$next_type = $next_id ? get_post_type( $next_id ) : '';
-					if ( ! $next_id || ! $next_type || ! self::is_valid_post_type( $next_type ) || ! self::post_is_readable( $next_id ) ) {
-						$result = '';
-						break;
-					}
-					$current_id   = $next_id;
-					$current_type = $next_type;
-				} else {
-					$raw = get_field( $field['key'], $current_id );
-					if ( isset( $display_opts['linkDestination'] ) && 'related' === $display_opts['linkDestination']
-						&& in_array( $field['type'], array( 'post_object', 'relationship' ), true ) ) {
-						$result = self::format_related_links( $raw, $display_opts );
-					} else {
-						$result = self::format_field_value( $field, $raw, $display_opts );
-					}
+					$seen[ $piece ] = true;
+					$parts[]        = $piece;
 				}
 			}
 
+			$result = implode( esc_html( $separator ), $parts );
+
 			self::$relationship_cache[ $cache_key ] = $result;
 			return $result;
+		}
+
+		/**
+		 * Recursive branch walker for resolve_relationship_path(). At each
+		 * intermediate step it follows EVERY id the Post Object/Relationship
+		 * field holds (via extract_related_ids(), which already accepts
+		 * IDs, WP_Post objects and arrays), recursing once per related
+		 * object that is a valid, readable post of a known CPT — so a
+		 * three-object Relationship in the middle of the path produces
+		 * three separate branches, each continuing independently. Path
+		 * length is fixed and finite (capped by UADV_MAX_RELATIONSHIP_DEPTH
+		 * before this is ever called), so recursion always terminates
+		 * regardless of cyclical relational data.
+		 *
+		 * @param int    $post_id
+		 * @param string $post_type
+		 * @param array  $path
+		 * @param int    $index Current position in $path.
+		 * @param array  $leaves By-reference accumulator of
+		 *                       ['field' => array, 'post_id' => int].
+		 */
+		private static function walk_relationship_path_branch( $post_id, $post_type, array $path, $index, array &$leaves ) {
+			if ( count( $leaves ) >= UADV_MAX_RELATIONSHIP_FANOUT ) {
+				return;
+			}
+			if ( ! isset( $path[ $index ] ) ) {
+				return;
+			}
+
+			$field = self::get_field_by_key( $post_type, $path[ $index ] );
+			if ( ! $field ) {
+				return;
+			}
+
+			$last_index = count( $path ) - 1;
+
+			if ( $index === $last_index ) {
+				$leaves[] = array( 'field' => $field, 'post_id' => $post_id );
+				return;
+			}
+
+			if ( empty( $field['relational'] ) ) {
+				return; // Not relational but more steps remain — dead end for this branch.
+			}
+
+			$raw = get_field( $field['key'], $post_id );
+			$ids = self::extract_related_ids( $raw );
+
+			foreach ( $ids as $related_id ) {
+				if ( count( $leaves ) >= UADV_MAX_RELATIONSHIP_FANOUT ) {
+					return;
+				}
+				if ( ! self::post_is_readable( $related_id ) ) {
+					continue;
+				}
+				$related_type = get_post_type( $related_id );
+				if ( ! $related_type || ! self::is_valid_post_type( $related_type ) ) {
+					continue;
+				}
+				self::walk_relationship_path_branch( $related_id, $related_type, $path, $index + 1, $leaves );
+			}
 		}
 
 		// =====================================================================
@@ -673,6 +732,7 @@ if ( ! class_exists( 'UADV_System' ) ) {
 
 		private static function field_block_defaults() {
 			return array(
+				'className'          => '',
 				'sourceType'         => 'post_title',
 				'fieldKey'           => '',
 				'taxonomy'           => '',
@@ -703,6 +763,7 @@ if ( ! class_exists( 'UADV_System' ) ) {
 
 		private static function link_block_defaults() {
 			return array(
+				'className'        => '',
 				'actionType'       => 'view',
 				'customLabel'      => '',
 				'icon'             => '',
@@ -801,14 +862,40 @@ if ( ! class_exists( 'UADV_System' ) ) {
 		}
 
 		/**
-		 * data-label + show/hide-label classes + text/vertical align, for
-		 * the structural <td>/.uadv-field-slot wrapper the PARENT builds
-		 * around each repeated cell's own rendered output.
+		 * Splits a block's className attribute (WordPress core's own
+		 * customClassName support) into individually-sanitized class
+		 * tokens, so an editor-typed class like "inventory_primary_field"
+		 * can be safely merged onto a structural wrapper the PARENT builds
+		 * (<td>, .uadv-field-slot, <th>) — never raw, never as arbitrary
+		 * HTML/attributes, always one sanitize_html_class() call per token.
+		 *
+		 * @return string[]
+		 */
+		private static function extract_custom_classes( array $attrs ) {
+			if ( empty( $attrs['className'] ) || ! is_string( $attrs['className'] ) ) {
+				return array();
+			}
+			$classes = array();
+			foreach ( preg_split( '/\s+/', trim( $attrs['className'] ) ) as $token ) {
+				$token = sanitize_html_class( $token );
+				if ( '' !== $token ) {
+					$classes[] = $token;
+				}
+			}
+			return $classes;
+		}
+
+		/**
+		 * data-label + the field's own custom class(es) + show/hide-label
+		 * classes + text/vertical align, for the structural <td>/
+		 * .uadv-field-slot wrapper the PARENT builds around each repeated
+		 * cell's own rendered output (which keeps its own inner block
+		 * wrapper too — this is IN ADDITION to that, not instead of it).
 		 */
 		private static function build_cell_wrapper_attrs( array $attrs, $post_type ) {
 			$label = self::resolve_field_label( $attrs, $post_type );
 
-			$classes = array();
+			$classes = self::extract_custom_classes( $attrs );
 			if ( empty( $attrs['showLabelDesktop'] ) ) {
 				$classes[] = 'uadv-hide-desktop-label';
 			}
@@ -843,12 +930,16 @@ if ( ! class_exists( 'UADV_System' ) ) {
 		 * "Related Record": each related post gets its OWN <a> (never one
 		 * link wrapping a joined string of several titles), and only after
 		 * confirming the related post still exists and is readable by the
-		 * current visitor.
+		 * current visitor. Returns the list of individual <a> strings,
+		 * unjoined, so callers that branch across multiple objects (see
+		 * resolve_relationship_path()) can collect/de-duplicate them before
+		 * ever joining with a separator.
+		 *
+		 * @return string[]
 		 */
-		private static function format_related_links( $raw, array $opts ) {
-			$ids       = self::extract_related_ids( $raw );
-			$separator = ( isset( $opts['separator'] ) && '' !== $opts['separator'] ) ? $opts['separator'] : ', ';
-			$target    = ( isset( $opts['linkTarget'] ) && '_blank' === $opts['linkTarget'] ) ? ' target="_blank" rel="noopener noreferrer"' : '';
+		private static function format_related_links_list( $raw, array $opts ) {
+			$ids    = self::extract_related_ids( $raw );
+			$target = ( isset( $opts['linkTarget'] ) && '_blank' === $opts['linkTarget'] ) ? ' target="_blank" rel="noopener noreferrer"' : '';
 
 			$out = array();
 			foreach ( $ids as $id ) {
@@ -861,7 +952,17 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				}
 				$out[] = '<a href="' . esc_url( get_permalink( $id ) ) . '"' . $target . '>' . esc_html( $title ) . '</a>';
 			}
-			return implode( esc_html( $separator ), $out );
+			return $out;
+		}
+
+		/**
+		 * Same as format_related_links_list(), joined with the configured
+		 * separator — kept for the single-object call sites (a direct ACF
+		 * Post Object/Relationship field, not a Relationship Path).
+		 */
+		private static function format_related_links( $raw, array $opts ) {
+			$separator = ( isset( $opts['separator'] ) && '' !== $opts['separator'] ) ? $opts['separator'] : ', ';
+			return implode( esc_html( $separator ), self::format_related_links_list( $raw, $opts ) );
 		}
 
 		/**
@@ -892,6 +993,28 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				}
 			}
 			return '';
+		}
+
+		/**
+		 * Decides whether a cell's already-rendered HTML should be treated
+		 * as "no output" (and therefore replaced with emptyValueText).
+		 * wp_strip_all_tags() alone can't be trusted here: it strips a
+		 * valid <img> (or a link wrapping one) down to '', which would
+		 * wrongly mark a real Featured Image / ACF Image as empty. A
+		 * genuinely empty string is checked first; failing that, any real
+		 * markup (an <img>, an <a> around one, an icon, etc.) is treated as
+		 * non-empty output on sight, and only markup-free strings fall
+		 * through to the text-stripping check.
+		 */
+		private static function is_rendered_value_empty( $value_html ) {
+			$value_html = (string) $value_html;
+			if ( '' === trim( $value_html ) ) {
+				return true;
+			}
+			if ( false !== strpos( $value_html, '<' ) ) {
+				return false; // Real markup (image, link, etc.) is never "empty".
+			}
+			return '' === trim( wp_strip_all_tags( $value_html ) );
 		}
 
 		private static function compute_taxonomy_cell( array $attrs, $post_type, WP_Post $post ) {
@@ -1011,7 +1134,7 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				$value_html = self::force_image_display( $source_type, $attrs, $post, $post_type );
 			}
 
-			$is_empty = ( '' === trim( wp_strip_all_tags( $value_html ) ) );
+			$is_empty = self::is_rendered_value_empty( $value_html );
 			if ( $is_empty ) {
 				$value_html     = ! empty( $attrs['hideEmptyValue'] ) ? '' : esc_html( '' !== $attrs['emptyValueText'] ? $attrs['emptyValueText'] : '—' );
 				$already_linked = false;
@@ -1264,6 +1387,12 @@ if ( ! class_exists( 'UADV_System' ) ) {
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="list"] table.uadv-table thead { display: none; }
 	__SEL__[data-mobile-layout="scroll-table"] .uadv-table-scroll { overflow-x: auto; }
 	__SEL__ .uadv-grid { grid-template-columns: 1fr; }
+	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] table.uadv-table tr {
+		margin-bottom: var(--uadv-gap, 16px);
+	}
+	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] table.uadv-table tr:last-child {
+		margin-bottom: 0;
+	}
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] td[data-label]::before,
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="list"] td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; display: block; }
 	__SEL__[data-desktop-layout="table"][data-mobile-layout="cards"] td[data-label].uadv-hide-mobile-label::before,
@@ -1429,7 +1558,21 @@ CSS;
 					$out .= '<thead><tr>';
 					foreach ( $cell_blocks as $inner ) {
 						$inner_attrs = self::merged_cell_attrs( $inner );
-						$out        .= '<th>' . esc_html( self::resolve_field_label( $inner_attrs, $post_type ) ) . '</th>';
+						$label       = self::resolve_field_label( $inner_attrs, $post_type );
+
+						$th_classes    = self::extract_custom_classes( $inner_attrs );
+						$th_class_attr = ! empty( $th_classes ) ? ' class="' . esc_attr( implode( ' ', $th_classes ) ) . '"' : '';
+
+						// showLabelDesktop = false must not leave a visible
+						// header while only hiding the content's own label:
+						// the <th> stays (so column count/alignment are
+						// unaffected) but its label becomes screen-reader-
+						// only rather than visibly printed.
+						$label_html = ! empty( $inner_attrs['showLabelDesktop'] )
+							? esc_html( $label )
+							: '<span class="screen-reader-text">' . esc_html( $label ) . '</span>';
+
+						$out .= '<th' . $th_class_attr . '>' . $label_html . '</th>';
 					}
 					$out .= '</tr></thead>';
 				}
@@ -2492,6 +2635,17 @@ JS;
 .uadv-grid { display: grid; grid-template-columns: repeat(var(--uadv-grid-cols-desktop, 3), 1fr); gap: var(--uadv-gap, 16px); }
 @media (max-width: 1024px) and (min-width: 783px) {
 	.uadv-grid { grid-template-columns: repeat(var(--uadv-grid-cols-tablet, 2), 1fr); }
+}
+.uadv-data-view[data-desktop-layout="list"] .uadv-grid {
+	grid-template-columns: 1fr;
+}
+.uadv-data-view .screen-reader-text {
+	position: absolute !important;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(1px, 1px, 1px, 1px);
+	white-space: nowrap;
 }
 .uadv-card { position: relative; min-width: 0; }
 .uadv-card-link-overlay { position: absolute; inset: 0; z-index: 1; }
