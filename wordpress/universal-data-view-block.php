@@ -19,15 +19,13 @@
  *   uadv/data-empty-message      Shown once, only when 0 records match.
  *   uadv/data-pagination          Shown once, after the record list.
  *
- *   record-overlay/link           INDEPENDENT — no parent/ancestor, no ACF
- *                                  dependency, no CPT hardcoded. An
- *                                  invisible link covering its nearest
- *                                  positioned container, usable inside
- *                                  Universal Data View, core Query Loop/
- *                                  Post Template, a single post/page, or
- *                                  any other block/template. See the
- *                                  "INDEPENDENT BLOCK" section further
- *                                  down for details.
+ * Any block placed directly inside a Universal Data View record layout
+ * (including a completely separate, independent block from another
+ * snippet — e.g. a "Record Overlay Link" block) is repeated once per
+ * record and receives that record's context if it declares usesContext
+ * for uadv/postType/uadv/recordId. This file makes no assumption about
+ * which other blocks exist — see render_data_view_block()'s innerBlocks
+ * classification loop.
  *
  * IMPORTANT — HOW TO INSTALL WITH THE "CODE SNIPPETS" PLUGIN:
  *   1. Copy the ENTIRE contents of this file.
@@ -48,7 +46,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UADV_VERSION' ) ) {
-	define( 'UADV_VERSION', '1.2.0' );
+	define( 'UADV_VERSION', '1.2.1' );
 }
 
 if ( ! defined( 'UADV_MAX_RELATIONSHIP_DEPTH' ) ) {
@@ -1282,115 +1280,6 @@ if ( ! class_exists( 'UADV_System' ) ) {
 			return '<a ' . $wrapper . ' href="' . esc_url( $href ) . '"' . $target_attr . '>' . $icon_html . esc_html( $label ) . '</a>';
 		}
 
-		// =====================================================================
-		// INDEPENDENT BLOCK — Record Overlay Link (record-overlay/link).
-		//
-		// NOT part of the Universal Data View block family: no 'parent', no
-		// 'ancestor', no ACF dependency, no CPT hardcoded anywhere below.
-		// Registered and usable entirely on its own — from the general
-		// inserter, inside any Group/Row/Stack/Columns/Column, inside core
-		// Query Loop's Post Template, inside a Universal Data View record
-		// layout, inside a WordPress template, or directly on a single
-		// post/page. See register_blocks() for its registration and
-		// get_frontend_css() for its overlay positioning rules.
-		// =====================================================================
-
-		/**
-		 * Resolves "the current record" id in priority order:
-		 *   1. uadv/recordId — Universal Data View's own per-record context.
-		 *   2. postId        — core Query Loop / Post Template context.
-		 *   3. get_the_ID()  — the global current post (a single post/page,
-		 *                      or anywhere inside The Loop).
-		 * When a post-type context (uadv/postType or postType) accompanies
-		 * the id, the resolved post's actual type is cross-checked against
-		 * it — defensive only, since the only code that ever sets
-		 * uadv/recordId (render_data_view_block()) always sets both keys
-		 * consistently. No Custom Post Type name appears anywhere here.
-		 *
-		 * @return int 0 when no valid record id is available.
-		 */
-		private static function resolve_overlay_record_id( $block ) {
-			$context = ( isset( $block->context ) && is_array( $block->context ) ) ? $block->context : array();
-
-			if ( ! empty( $context['uadv/recordId'] ) ) {
-				$record_id = absint( $context['uadv/recordId'] );
-				if ( $record_id > 0 ) {
-					return self::validate_overlay_post_type( $record_id, isset( $context['uadv/postType'] ) ? $context['uadv/postType'] : '' );
-				}
-			}
-
-			if ( ! empty( $context['postId'] ) ) {
-				$record_id = absint( $context['postId'] );
-				if ( $record_id > 0 ) {
-					return self::validate_overlay_post_type( $record_id, isset( $context['postType'] ) ? $context['postType'] : '' );
-				}
-			}
-
-			$fallback = get_the_ID();
-			return $fallback ? absint( $fallback ) : 0;
-		}
-
-		private static function validate_overlay_post_type( $record_id, $expected_post_type ) {
-			$expected_post_type = sanitize_key( (string) $expected_post_type );
-			if ( '' === $expected_post_type ) {
-				return $record_id;
-			}
-			return ( get_post_type( $record_id ) === $expected_post_type ) ? $record_id : 0;
-		}
-
-		/**
-		 * Renders a single invisible <a> — never a wrapper around the whole
-		 * container, so other links/buttons inside it are never nested
-		 * inside another <a>. Positioning (covering only the nearest
-		 * positioned ancestor) is done entirely by CSS in get_frontend_css()
-		 * against the .record-overlay-link class; no JS, no onclick, ever.
-		 */
-		public static function render_record_overlay_link_block( $attributes, $content, $block ) {
-			if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
-				return self::static_preview_markup( __( 'Record Overlay Link', 'uadv' ), __( 'Invisible link over its nearest positioned container.', 'uadv' ) );
-			}
-
-			$record_id = self::resolve_overlay_record_id( $block );
-			if ( $record_id <= 0 ) {
-				return '';
-			}
-
-			$post = get_post( $record_id );
-			if ( ! $post ) {
-				return '';
-			}
-
-			// Reuses the existing readability check (post_is_readable()) —
-			// same permission gate the rest of this system already relies
-			// on for Related/Current Record links.
-			if ( ! self::post_is_readable( $record_id ) ) {
-				return '';
-			}
-
-			$href = get_permalink( $post );
-			if ( ! $href ) {
-				return '';
-			}
-
-			$classes = array( 'record-overlay-link' );
-			if ( ! empty( $attributes['overlayClass'] ) && is_string( $attributes['overlayClass'] ) ) {
-				foreach ( preg_split( '/\s+/', trim( $attributes['overlayClass'] ) ) as $token ) {
-					$token = sanitize_html_class( $token );
-					if ( '' !== $token ) {
-						$classes[] = $token;
-					}
-				}
-			}
-
-			$label = ( isset( $attributes['accessibleLabel'] ) && '' !== trim( (string) $attributes['accessibleLabel'] ) )
-				? $attributes['accessibleLabel']
-				: sprintf( __( 'View %s', 'uadv' ), get_the_title( $post ) );
-
-			$target_attr = ! empty( $attributes['openInNewTab'] ) ? ' target="_blank" rel="noopener noreferrer"' : '';
-
-			return '<a class="' . esc_attr( implode( ' ', $classes ) ) . '" href="' . esc_url( $href ) . '" aria-label="' . esc_attr( $label ) . '"' . $target_attr . '></a>';
-		}
-
 		public static function render_data_empty_message_block( $attributes ) {
 			if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
 				return self::static_preview_markup( __( 'Universal Data Empty Message', 'uadv' ), __( 'Shown only when a view has 0 records.', 'uadv' ) );
@@ -1950,39 +1839,14 @@ CSS;
 				'supports'        => self::block_supports( array( 'typography' => self::typography_supports() ) ),
 				'render_callback' => array( __CLASS__, 'render_data_pagination_block' ),
 			) );
-
-			// Independent — no 'parent', no 'ancestor', usable anywhere.
-			// See the "INDEPENDENT BLOCK" section above render_record_overlay_link_block()
-			// for the full rationale.
-			register_block_type( 'record-overlay/link', array(
-				'attributes'      => array(
-					'openInNewTab'    => array( 'type' => 'boolean', 'default' => false ),
-					'accessibleLabel' => array( 'type' => 'string', 'default' => '' ),
-					'overlayClass'    => array( 'type' => 'string', 'default' => '' ),
-				),
-				'uses_context'    => array( 'uadv/recordId', 'uadv/postType', 'postId', 'postType' ),
-				// No spacing/color/typography supports on purpose: this
-				// block must never add height, margin, padding, visible
-				// text, background or color of its own. 'className' is
-				// off too, so the editor doesn't offer a second, redundant
-				// "Additional CSS Class(es)" field next to the block's own
-				// dedicated Overlay Class control.
-				'supports'        => array(
-					'className'       => false,
-					'customClassName' => false,
-					'html'            => false,
-					'anchor'          => false,
-				),
-				'render_callback' => array( __CLASS__, 'render_record_overlay_link_block' ),
-			) );
 		}
 
 		// =====================================================================
-		// EDITOR JAVASCRIPT — registers all 5 Universal Data View blocks plus
-		// the independent Record Overlay Link block. No ServerSideRender, no
-		// real query, no real ACF field anywhere in the editor: every block
-		// shows a static, non-interactive card. Loaded ONLY in the block
-		// editor (enqueue_block_editor_assets), never on the front-end.
+		// EDITOR JAVASCRIPT — registers all 5 Universal Data View blocks. No
+		// ServerSideRender, no real query, no real ACF field anywhere in the
+		// editor: every block shows a static, non-interactive card. Loaded
+		// ONLY in the block editor (enqueue_block_editor_assets), never on
+		// the front-end.
 		// =====================================================================
 
 		public static function enqueue_editor_assets() {
@@ -2080,6 +1944,13 @@ CSS;
 		color: { background: true, text: true }
 	};
 
+	// 'record-overlay/link' is a plain block-name string, not a code
+	// dependency: it's the independent "Record Overlay Link" block from
+	// its own separate snippet (record-overlay-link-block.php). Listing
+	// its name here only lets it be inserted directly inside a Universal
+	// Data View record layout when that other snippet happens to be
+	// active too; if it isn't, Gutenberg simply won't offer it — nothing
+	// here requires it to exist.
 	var ALLOWED_BLOCKS = [
 		'uadv/data-field',
 		'uadv/data-link',
@@ -2762,75 +2633,6 @@ CSS;
 		save: function () { return null; }
 	} );
 
-	// ---------------------------------------------------------------
-	// record-overlay/link — INDEPENDENT block. No parent, no ancestor:
-	// insertable from the general inserter into ANY block, not just
-	// Universal Data View. Declares usesContext for both UADV's own
-	// per-record context and core Query Loop/Post Template's context,
-	// so it resolves correctly wherever it ends up (see
-	// resolve_overlay_record_id() on the PHP side for the fallback
-	// order down to get_the_ID()). In the editor it is always a plain,
-	// normal-flow, selectable Placeholder card — never absolutely
-	// positioned, never covering anything — so it can always be
-	// selected, moved and deleted like any other block; the overlay
-	// positioning only exists in the front-end CSS.
-	// ---------------------------------------------------------------
-	registerBlockType( 'record-overlay/link', {
-		title: __( 'Record Overlay Link', 'uadv' ),
-		description: __( 'An invisible link that covers only its nearest positioned container and opens that record’s page. Works inside Universal Data View, core Query Loop/Post Template, or directly on a single post/page — no ACF or specific content type required.', 'uadv' ),
-		icon: 'move',
-		category: 'widgets',
-		attributes: {
-			openInNewTab: { type: 'boolean', default: false },
-			accessibleLabel: { type: 'string', default: '' },
-			overlayClass: { type: 'string', default: '' }
-		},
-		usesContext: [ 'uadv/recordId', 'uadv/postType', 'postId', 'postType' ],
-		supports: {
-			className: false,
-			customClassName: false,
-			html: false,
-			anchor: false
-		},
-		edit: function ( props ) {
-			var attributes = props.attributes;
-			var setAttributes = props.setAttributes;
-			var blockProps = blockPropsOf();
-
-			var inspector = el( InspectorControls, {},
-				el( PanelBody, { title: __( 'Record Overlay Link settings', 'uadv' ) },
-					el( ToggleControl, {
-						label: __( 'Open in New Tab', 'uadv' ),
-						checked: !! attributes.openInNewTab,
-						onChange: function ( v ) { setAttributes( { openInNewTab: v } ); }
-					} ),
-					el( TextControl, {
-						label: __( 'Accessible Label', 'uadv' ),
-						help: __( 'Leave blank to use "View {Post Title}" automatically.', 'uadv' ),
-						value: attributes.accessibleLabel,
-						onChange: function ( v ) { setAttributes( { accessibleLabel: v } ); }
-					} ),
-					el( TextControl, {
-						label: __( 'Overlay Class', 'uadv' ),
-						help: __( 'Optional, space-separated extra class(es) for the link element itself.', 'uadv' ),
-						value: attributes.overlayClass,
-						onChange: function ( v ) { setAttributes( { overlayClass: v } ); }
-					} )
-				)
-			);
-
-			var metaParts = [ attributes.openInNewTab ? __( 'Opens in new tab', 'uadv' ) : __( 'Same tab', 'uadv' ) ];
-			if ( attributes.accessibleLabel ) { metaParts.push( attributes.accessibleLabel ); }
-
-			return el( 'div', blockProps, inspector, el( Placeholder, {
-				icon: 'move',
-				label: __( 'Record Overlay Link', 'uadv' ),
-				instructions: metaParts.join( ' · ' )
-			} ) );
-		},
-		save: function () { return null; }
-	} );
-
 } )( window.wp.blocks, window.wp.element, window.wp.blockEditor, window.wp.components, window.wp.i18n );
 JS;
 		}
@@ -2922,26 +2724,6 @@ JS;
 .uadv-grid .uadv-field-slot[data-label]::before { content: attr(data-label) ": "; font-weight: 600; }
 .uadv-row[data-record-url] { cursor: pointer; }
 .uadv-pagination-list { display: flex; list-style: none; margin: 0; padding: 0; gap: 4px; flex-wrap: wrap; }
-
-/* Record Overlay Link (record-overlay/link) — independent of Universal
-   Data View; purely functional positioning, no color/size/spacing. The
-   author assigns "clickable_record" (or any class) to whichever container
-   should become clickable, and places a Record Overlay Link block inside
-   it — the overlay covers only that nearest positioned ancestor. */
-.clickable_record {
-	position: relative;
-}
-.clickable_record > .record-overlay-link,
-.clickable_record .record-overlay-link {
-	position: absolute;
-	inset: 0;
-	z-index: 2;
-	display: block;
-}
-.clickable_record .record-interactive {
-	position: relative;
-	z-index: 3;
-}
 CSS;
 		}
 
