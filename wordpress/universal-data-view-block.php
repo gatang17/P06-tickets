@@ -46,7 +46,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UADV_VERSION' ) ) {
-	define( 'UADV_VERSION', '1.2.2' );
+	define( 'UADV_VERSION', '1.3.0' );
 }
 
 if ( ! defined( 'UADV_MAX_RELATIONSHIP_DEPTH' ) ) {
@@ -1428,6 +1428,9 @@ if ( ! class_exists( 'UADV_System' ) ) {
 			$meta      = ( isset( $available[ $post_type ] ) && ! empty( $available[ $post_type ]->labels->singular_name ) )
 				? sprintf( __( 'Post Type: %s', 'uadv' ), $available[ $post_type ]->labels->singular_name )
 				: __( 'No content type selected', 'uadv' );
+			if ( isset( $attributes['querySource'] ) && 'current_post' === $attributes['querySource'] ) {
+				$meta .= ' · ' . __( 'Current Post', 'uadv' );
+			}
 			return self::static_preview_markup( __( 'Universal Data View', 'uadv' ), $meta );
 		}
 
@@ -1502,10 +1505,54 @@ CSS;
 			return '<style>' . $css . '</style>';
 		}
 
+		/**
+		 * "Content Source: Current Post" resolver — for a Universal Data
+		 * View placed inside a reusable pattern/template meant to show
+		 * exactly ONE specific record (e.g. a CPT's own Single Post
+		 * Template), rather than running an independent listing query
+		 * that would show the same result regardless of which record's
+		 * URL the visitor actually opened.
+		 *
+		 * Priority:
+		 *   1. postId context — if this block is itself nested inside a
+		 *      core Query Loop's Post Template, use ITS current iteration
+		 *      post rather than the page's own main-query object.
+		 *   2. get_queried_object() — WordPress's own "this is the record
+		 *      actually being viewed" object for a plain singular
+		 *      template/page.
+		 * Either way, the resolved post's type must match the block's own
+		 * configured Content Type and pass the existing readability check
+		 * — never assumes or hardcodes a CPT name, and never leaks a
+		 * mismatched/unreadable post.
+		 *
+		 * @return WP_Post|null
+		 */
+		private static function resolve_current_post_record( $block, $post_type ) {
+			$context = ( isset( $block->context ) && is_array( $block->context ) ) ? $block->context : array();
+
+			if ( ! empty( $context['postId'] ) ) {
+				$candidate = get_post( absint( $context['postId'] ) );
+				if ( $candidate && $candidate->post_type === $post_type && self::post_is_readable( $candidate->ID ) ) {
+					return $candidate;
+				}
+				return null;
+			}
+
+			$queried = get_queried_object();
+			if ( $queried instanceof WP_Post && $queried->post_type === $post_type && self::post_is_readable( $queried->ID ) ) {
+				return $queried;
+			}
+
+			return null;
+		}
+
 		// =====================================================================
-		// PARENT RENDER CALLBACK — runs ONE secure WP_Query, then repeats
-		// the record-level InnerBlocks (Field/Link) once per result via
-		// manually-constructed WP_Block instances (render_inner_block()).
+		// PARENT RENDER CALLBACK — either runs ONE secure WP_Query (Content
+		// Source: Query, the default) or resolves a single specific record
+		// (Content Source: Current Post — see resolve_current_post_record()),
+		// then repeats the record-level InnerBlocks once per resulting
+		// record via manually-constructed WP_Block instances
+		// (render_inner_block()/render_record_layout_block()).
 		// =====================================================================
 
 		public static function render_data_view_block( $attributes, $content, $block ) {
@@ -1525,63 +1572,88 @@ CSS;
 
 			$instance_index = self::$view_instance_counter++;
 			$anchor         = ! empty( $attributes['anchor'] ) ? sanitize_html_class( $attributes['anchor'] ) : '';
-			$query_var      = 'uadv_pg_' . ( '' !== $anchor ? $anchor : (string) $instance_index );
 
-			$enable_pagination = ! empty( $attributes['enablePagination'] );
-			$records_per_page  = max( 1, absint( $attributes['recordsPerPage'] ) );
-			$number_of_records = (int) $attributes['numberOfRecords'];
+			$query_source = ( isset( $attributes['querySource'] ) && 'current_post' === $attributes['querySource'] ) ? 'current_post' : 'query';
 
-			$current_page = 1;
-			if ( $enable_pagination && isset( $_GET[ $query_var ] ) ) {
-				$current_page = max( 1, absint( wp_unslash( $_GET[ $query_var ] ) ) );
-			}
+			$enable_pagination = false;
+			$current_page      = 1;
+			$total_pages       = 1;
+			$query_var         = '';
+			$records           = array();
 
-			$order = self::resolve_orderby( $post_type, isset( $attributes['orderBy'] ) ? $attributes['orderBy'] : 'date' );
-
-			$query_args = array_merge( array(
-				'post_type'              => $post_type,
-				'post_status'            => self::sanitize_post_status_list( $post_type, (array) $attributes['postStatus'] ),
-				'perm'                   => 'readable',
-				'order'                  => ( 'ASC' === strtoupper( (string) $attributes['orderDirection'] ) ) ? 'ASC' : 'DESC',
-				'ignore_sticky_posts'    => true,
-				'no_found_rows'          => ! $enable_pagination,
-				'update_post_meta_cache' => true,
-				'update_post_term_cache' => true,
-			), $order );
-
-			if ( $enable_pagination ) {
-				$query_args['posts_per_page'] = $records_per_page;
-				$query_args['paged']          = $current_page;
+			if ( 'current_post' === $query_source ) {
+				// Show exactly the ONE record the current request is
+				// actually viewing — see resolve_current_post_record().
+				// Post Status / Number of Records / Ordering / Filters /
+				// Pagination are all meaningless for a single record, so
+				// none of that runs, and no WP_Query executes at all.
+				$record = self::resolve_current_post_record( $block, $post_type );
+				if ( $record ) {
+					$records[] = $record;
+				}
 			} else {
-				$query_args['posts_per_page'] = ( -1 === $number_of_records ) ? -1 : max( 1, $number_of_records );
-			}
+				$query_var = 'uadv_pg_' . ( '' !== $anchor ? $anchor : (string) $instance_index );
 
-			if ( ! empty( $attributes['filterTaxonomy'] ) && ! empty( $attributes['filterTerms'] ) ) {
-				$tax_query = self::build_tax_query( $post_type, sanitize_key( $attributes['filterTaxonomy'] ), (array) $attributes['filterTerms'] );
-				if ( ! empty( $tax_query ) ) {
-					$query_args['tax_query'] = $tax_query;
+				$enable_pagination = ! empty( $attributes['enablePagination'] );
+				$records_per_page  = max( 1, absint( $attributes['recordsPerPage'] ) );
+				$number_of_records = (int) $attributes['numberOfRecords'];
+
+				if ( $enable_pagination && isset( $_GET[ $query_var ] ) ) {
+					$current_page = max( 1, absint( wp_unslash( $_GET[ $query_var ] ) ) );
+				}
+
+				$order = self::resolve_orderby( $post_type, isset( $attributes['orderBy'] ) ? $attributes['orderBy'] : 'date' );
+
+				$query_args = array_merge( array(
+					'post_type'              => $post_type,
+					'post_status'            => self::sanitize_post_status_list( $post_type, (array) $attributes['postStatus'] ),
+					'perm'                   => 'readable',
+					'order'                  => ( 'ASC' === strtoupper( (string) $attributes['orderDirection'] ) ) ? 'ASC' : 'DESC',
+					'ignore_sticky_posts'    => true,
+					'no_found_rows'          => ! $enable_pagination,
+					'update_post_meta_cache' => true,
+					'update_post_term_cache' => true,
+				), $order );
+
+				if ( $enable_pagination ) {
+					$query_args['posts_per_page'] = $records_per_page;
+					$query_args['paged']          = $current_page;
+				} else {
+					$query_args['posts_per_page'] = ( -1 === $number_of_records ) ? -1 : max( 1, $number_of_records );
+				}
+
+				if ( ! empty( $attributes['filterTaxonomy'] ) && ! empty( $attributes['filterTerms'] ) ) {
+					$tax_query = self::build_tax_query( $post_type, sanitize_key( $attributes['filterTaxonomy'] ), (array) $attributes['filterTerms'] );
+					if ( ! empty( $tax_query ) ) {
+						$query_args['tax_query'] = $tax_query;
+					}
+				}
+
+				if ( ! empty( $attributes['filterAcfFieldKey'] ) && '' !== (string) $attributes['filterAcfValue'] ) {
+					$meta_query = self::build_meta_query(
+						$post_type,
+						$attributes['filterAcfFieldKey'],
+						$attributes['filterAcfValue'],
+						isset( $attributes['filterAcfCompare'] ) ? $attributes['filterAcfCompare'] : '='
+					);
+					if ( ! empty( $meta_query ) ) {
+						$query_args['meta_query'] = $meta_query;
+					}
+				}
+
+				/**
+				 * Lets the query be adjusted from outside this file without
+				 * touching it — still runs through WP_Query, never raw SQL.
+				 */
+				$query_args = apply_filters( 'uadv_query_args', $query_args, $post_type, $attributes );
+
+				$found_query = new WP_Query( $query_args );
+				$records     = $found_query->posts;
+
+				if ( $enable_pagination ) {
+					$total_pages = max( 1, (int) $found_query->max_num_pages );
 				}
 			}
-
-			if ( ! empty( $attributes['filterAcfFieldKey'] ) && '' !== (string) $attributes['filterAcfValue'] ) {
-				$meta_query = self::build_meta_query(
-					$post_type,
-					$attributes['filterAcfFieldKey'],
-					$attributes['filterAcfValue'],
-					isset( $attributes['filterAcfCompare'] ) ? $attributes['filterAcfCompare'] : '='
-				);
-				if ( ! empty( $meta_query ) ) {
-					$query_args['meta_query'] = $meta_query;
-				}
-			}
-
-			/**
-			 * Lets the query be adjusted from outside this file without
-			 * touching it — still runs through WP_Query, never raw SQL.
-			 */
-			$query_args = apply_filters( 'uadv_query_args', $query_args, $post_type, $attributes );
-
-			$query = new WP_Query( $query_args );
 
 			$parsed_inner = ( isset( $block->parsed_block['innerBlocks'] ) && is_array( $block->parsed_block['innerBlocks'] ) )
 				? $block->parsed_block['innerBlocks']
@@ -1652,7 +1724,7 @@ CSS;
 			$out  = self::instance_breakpoint_style( $instance_index, $breakpoint );
 			$out .= '<div ' . $wrapper . ' data-desktop-layout="' . esc_attr( $desktop_layout ) . '" data-mobile-layout="' . esc_attr( $mobile_layout ) . '">';
 
-			if ( ! $query->have_posts() ) {
+			if ( empty( $records ) ) {
 				$out .= $empty_message_raw
 					? self::render_inner_block( $empty_message_raw, array( 'uadv/postType' => $post_type ) )
 					: self::render_default_empty_message();
@@ -1677,9 +1749,8 @@ CSS;
 				$out .= '<div class="uadv-grid">';
 			}
 
-			while ( $query->have_posts() ) {
-				$query->the_post();
-				$record = get_post();
+			foreach ( $records as $record ) {
+				setup_postdata( $record );
 
 				$child_context = array(
 					'uadv/postType' => $post_type,
@@ -1732,11 +1803,6 @@ CSS;
 
 			$out .= $is_table ? '</tbody></table></div>' : '</div>';
 
-			$total_pages = 1;
-			if ( $enable_pagination ) {
-				$total_pages = max( 1, (int) $query->max_num_pages );
-			}
-
 			if ( $enable_pagination && $total_pages > 1 ) {
 				$out .= $pagination_raw
 					? self::render_inner_block( $pagination_raw, array(
@@ -1787,6 +1853,7 @@ CSS;
 			register_block_type( 'uadv/data-view', array(
 				'attributes'        => array(
 					'postType'              => array( 'type' => 'string', 'default' => '' ),
+					'querySource'           => array( 'type' => 'string', 'default' => 'query' ),
 					'postStatus'            => array( 'type' => 'array', 'default' => array( 'publish' ) ),
 					'numberOfRecords'       => array( 'type' => 'number', 'default' => 10 ),
 					'enablePagination'      => array( 'type' => 'boolean', 'default' => false ),
@@ -1809,6 +1876,12 @@ CSS;
 					'filterAcfCompare'      => array( 'type' => 'string', 'default' => '=' ),
 				),
 				'provides_context'  => array( 'uadv/postType' => 'postType' ),
+				// 'postId' lets Content Source: Current Post correctly pick
+				// up the current record when this block is itself nested
+				// inside a core Query Loop's Post Template, rather than
+				// only working from get_queried_object() (a plain singular
+				// template/page). See resolve_current_post_record().
+				'uses_context'      => array( 'postId' ),
 				'supports'          => self::block_supports(),
 				'render_callback'   => array( __CLASS__, 'render_data_view_block' ),
 			) );
@@ -2121,6 +2194,7 @@ CSS;
 		category: 'widgets',
 		attributes: {
 			postType: { type: 'string', default: '' },
+			querySource: { type: 'string', default: 'query' },
 			postStatus: { type: 'array', default: [ 'publish' ] },
 			numberOfRecords: { type: 'number', default: 10 },
 			enablePagination: { type: 'boolean', default: false },
@@ -2143,6 +2217,11 @@ CSS;
 			filterAcfCompare: { type: 'string', default: '=' }
 		},
 		providesContext: { 'uadv/postType': 'postType' },
+		// 'postId' lets Content Source: Current Post correctly pick up the
+		// current record when this block is itself nested inside a core
+		// Query Loop's Post Template, instead of only working from a plain
+		// singular template/page.
+		usesContext: [ 'postId' ],
 		supports: UADV_BLOCK_SUPPORTS,
 		edit: function ( props ) {
 			var attributes = props.attributes;
@@ -2177,41 +2256,53 @@ CSS;
 				fieldChoicesForFilter.push( { value: f.key, label: f.label + ' (' + f.name + ')' } );
 			} );
 
+			var isCurrentPost = 'current_post' === attributes.querySource;
+
 			var inspector = el( InspectorControls, {},
 				el( PanelBody, { title: __( 'Content', 'uadv' ) },
+					el( SelectControl, {
+						label: __( 'Content Source', 'uadv' ),
+						value: attributes.querySource,
+						options: [
+							{ value: 'query', label: __( 'Query (list matching records)', 'uadv' ) },
+							{ value: 'current_post', label: __( 'Current Post (single template/pattern)', 'uadv' ) }
+						],
+						onChange: function ( value ) { setAttributes( { querySource: value } ); }
+					} ),
+					isCurrentPost ? el( 'p', { className: 'uadv-help-text' }, __( 'Shows only the ONE record the current page is actually viewing — use this when this block is placed inside a reusable pattern/template meant for a single record (e.g. a content type’s own Single Post Template), instead of running an independent listing query that would show the same result on every page. Post Status, Number of Records, Ordering, Filters and Pagination are ignored in this mode.', 'uadv' ) ) : null,
 					el( SelectControl, {
 						label: __( 'Content type (CPT)', 'uadv' ),
 						value: attributes.postType,
 						options: postTypeChoices,
 						onChange: function ( value ) { setAttributes( { postType: value, orderBy: 'date', filterTaxonomy: '', filterTerms: [], filterAcfFieldKey: '' } ); }
 					} ),
-					el( SelectControl, {
+					isCurrentPost ? null : el( SelectControl, {
 						label: __( 'Post Status', 'uadv' ),
 						multiple: true,
 						value: attributes.postStatus,
 						options: postStatusOptions,
 						onChange: function ( values ) { setAttributes( { postStatus: values } ); }
 					} ),
-					el( TextControl, {
+					isCurrentPost ? null : el( TextControl, {
 						label: __( 'Number of Records', 'uadv' ),
 						type: 'number',
 						value: attributes.numberOfRecords,
 						help: __( 'Use -1 to show all matching records.', 'uadv' ),
 						onChange: function ( value ) { setAttributes( { numberOfRecords: parseInt( value, 10 ) || 0 } ); }
 					} ),
-					el( ToggleControl, {
+					isCurrentPost ? null : el( ToggleControl, {
 						label: __( 'Enable Pagination', 'uadv' ),
 						checked: !! attributes.enablePagination,
 						onChange: function ( value ) { setAttributes( { enablePagination: value } ); }
 					} ),
-					attributes.enablePagination ? el( TextControl, {
+					( ! isCurrentPost && attributes.enablePagination ) ? el( TextControl, {
 						label: __( 'Records per Page', 'uadv' ),
 						type: 'number',
 						value: attributes.recordsPerPage,
 						onChange: function ( value ) { setAttributes( { recordsPerPage: Math.max( 1, parseInt( value, 10 ) || 1 ) } ); }
 					} ) : null
 				),
-				el( PanelBody, { title: __( 'Ordering', 'uadv' ), initialOpen: false },
+				isCurrentPost ? null : el( PanelBody, { title: __( 'Ordering', 'uadv' ), initialOpen: false },
 					el( SelectControl, {
 						label: __( 'Order By', 'uadv' ),
 						value: attributes.orderBy,
@@ -2289,7 +2380,7 @@ CSS;
 						onChange: function ( value ) { setAttributes( { entireRecordClickable: value } ); }
 					} )
 				),
-				el( PanelBody, { title: __( 'Query', 'uadv' ), initialOpen: false },
+				isCurrentPost ? null : el( PanelBody, { title: __( 'Query', 'uadv' ), initialOpen: false },
 					el( SelectControl, {
 						label: __( 'Filter by Taxonomy', 'uadv' ),
 						value: attributes.filterTaxonomy,
@@ -2328,7 +2419,9 @@ CSS;
 			);
 
 			var header = el( 'p', { className: 'uadv-view-editor-label' },
-				__( 'Universal Data View', 'uadv' ) + ' — ' + ( attributes.postType ? ( getPostTypeLabel( attributes.postType ) + ' · ' + attributes.desktopLayout ) : __( 'No content type selected', 'uadv' ) )
+				__( 'Universal Data View', 'uadv' ) + ' — ' + ( attributes.postType
+					? ( getPostTypeLabel( attributes.postType ) + ' · ' + attributes.desktopLayout + ( isCurrentPost ? ' · ' + __( 'Current Post', 'uadv' ) : '' ) )
+					: __( 'No content type selected', 'uadv' ) )
 			);
 
 			var body;
