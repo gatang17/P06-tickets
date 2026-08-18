@@ -46,7 +46,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'UADV_VERSION' ) ) {
-	define( 'UADV_VERSION', '1.2.1' );
+	define( 'UADV_VERSION', '1.2.2' );
 }
 
 if ( ! defined( 'UADV_MAX_RELATIONSHIP_DEPTH' ) ) {
@@ -456,21 +456,40 @@ if ( ! class_exists( 'UADV_System' ) ) {
 			return array_filter( $ids );
 		}
 
+		/**
+		 * Formats an ACF Image field's raw value into a safe <img>,
+		 * accepting all three ACF Image "Return Format" options:
+		 *   - Attachment ID  — an int or numeric string.
+		 *   - Image Array    — an associative array carrying 'ID' (or
+		 *                       lowercase 'id') AND its own 'url'.
+		 *   - URL            — a plain string.
+		 * An attachment id is always preferred when available —
+		 * wp_get_attachment_image() correctly generates responsive
+		 * srcset/sizes for the requested image size — but for the Array
+		 * format the url is captured too (not mutually exclusive with the
+		 * id), so a stale/deleted attachment (migrated site, media removed
+		 * outside WordPress) still falls back to the array's own url
+		 * instead of silently producing nothing.
+		 */
 		private static function format_image_value( $value, $size ) {
 			$attachment_id = 0;
 			$fallback_url  = '';
 
 			if ( is_numeric( $value ) ) {
+				// Return Format: Attachment ID.
 				$attachment_id = (int) $value;
 			} elseif ( is_array( $value ) ) {
+				// Return Format: Image Array.
 				if ( ! empty( $value['ID'] ) ) {
 					$attachment_id = (int) $value['ID'];
 				} elseif ( ! empty( $value['id'] ) ) {
 					$attachment_id = (int) $value['id'];
-				} elseif ( ! empty( $value['url'] ) ) {
+				}
+				if ( ! empty( $value['url'] ) ) {
 					$fallback_url = $value['url'];
 				}
 			} elseif ( is_string( $value ) ) {
+				// Return Format: URL.
 				$fallback_url = $value;
 			}
 
@@ -1068,6 +1087,31 @@ if ( ! class_exists( 'UADV_System' ) ) {
 			return '';
 		}
 
+		/**
+		 * Decides whether a cell's already-rendered HTML should be treated
+		 * as "no output" (and therefore replaced with emptyValueText).
+		 * wp_strip_all_tags() alone can't be trusted here: it strips a
+		 * valid <img> (or a link wrapping one) down to '', which would
+		 * wrongly mark a real Featured Image / ACF Image as empty — this
+		 * is exactly why an Image field with Display As set to Image can
+		 * end up rendering the "empty value" placeholder instead of the
+		 * image, even though format_image_value() built a perfectly valid
+		 * <img> tag. A genuinely empty string is checked first; failing
+		 * that, any real markup (an <img>, an <a> around one, an icon,
+		 * etc.) is treated as non-empty output on sight, and only markup-
+		 * free strings fall through to the text-stripping check.
+		 */
+		private static function is_rendered_value_empty( $value_html ) {
+			$value_html = (string) $value_html;
+			if ( '' === trim( $value_html ) ) {
+				return true;
+			}
+			if ( false !== strpos( $value_html, '<' ) ) {
+				return false; // Real markup (image, link, etc.) is never "empty".
+			}
+			return '' === trim( wp_strip_all_tags( $value_html ) );
+		}
+
 		private static function compute_taxonomy_cell( array $attrs, $post_type, WP_Post $post ) {
 			$taxonomy   = sanitize_key( $attrs['taxonomy'] );
 			$tax_object = self::get_taxonomy_by_key( $post_type, $taxonomy );
@@ -1185,7 +1229,7 @@ if ( ! class_exists( 'UADV_System' ) ) {
 				$value_html = self::force_image_display( $source_type, $attrs, $post, $post_type );
 			}
 
-			$is_empty = ( '' === trim( wp_strip_all_tags( $value_html ) ) );
+			$is_empty = self::is_rendered_value_empty( $value_html );
 			if ( $is_empty ) {
 				$value_html     = ! empty( $attrs['hideEmptyValue'] ) ? '' : esc_html( '' !== $attrs['emptyValueText'] ? $attrs['emptyValueText'] : '—' );
 				$already_linked = false;
