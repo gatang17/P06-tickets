@@ -1,0 +1,296 @@
+{
+  "diagrama": "Diagrama Entidad-Relación · V2",
+  "leyenda": {
+    "CPT": "Custom Post Type",
+    "TAXONOMIA": "Taxonomía de WordPress",
+    "GRUPO_CONDICIONAL": "Grupo de campos ACF condicional, en rojo punteado: no son relaciones, viven en el mismo post modelo_equipamiento y aparecen según la familia del tipo",
+    "REPEATER": "Repeater de ACF, en gris punteado: tabla puente N:M con atributos propios dentro del post padre",
+    "NATIVO_WP": "Entidad nativa de WordPress (no es CPT ni taxonomía)"
+  },
+  "secciones": [
+    "Catálogo y ficha técnica · el modelo",
+    "La unidad física · dónde está y cómo está",
+    "Operación · mantenimiento, préstamo, fallas"
+  ],
+  "tipos_de_campo": {
+    "TITLE": "campo título del post",
+    "TERM": "campo del término de taxonomía",
+    "PARENT": "término padre (taxonomía jerárquica)",
+    "TAX": "asignación de taxonomía sobre el post",
+    "OBJ": "relación object/post object hacia otro CPT",
+    "USER": "relación hacia wp_users",
+    "IMG": "campo de imagen/archivo"
+  },
+  "entidades": [
+    {
+      "nombre": "TIPO_EQUIPAMIENTO",
+      "tipo": "TAXONOMIA",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "campos": [
+        { "nombre": "nombre", "tipo_campo": "TERM" },
+        { "nombre": "familia", "tipo_campo": "texto", "nota": "determina qué grupo condicional (MODELO_IMPRESORA / MODELO_PANTALLA_LUMINICA / MODELO_CORTADORA) se muestra en modelo_equipamiento" },
+        { "nombre": "descripcion", "tipo_campo": "texto" }
+      ]
+    },
+    {
+      "nombre": "MODELO_EQUIPAMIENTO",
+      "tipo": "CPT",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "campos": [
+        { "nombre": "nombre_modelo", "tipo_campo": "TITLE" },
+        { "nombre": "fabricante", "tipo_campo": "texto" },
+        { "nombre": "tipo_equipamiento", "tipo_campo": "TAX", "referencia": "TIPO_EQUIPAMIENTO" },
+        { "nombre": "fuente_energia", "tipo_campo": "texto" },
+        { "nombre": "vida_util_anios", "tipo_campo": "numero" },
+        { "nombre": "periodicidad_mant_dias", "tipo_campo": "numero" },
+        { "nombre": "ficha_tecnica", "tipo_campo": "IMG" }
+      ],
+      "nota": "1 modelo · N unidades (EQUIPAMIENTO). Contiene, según la familia del tipo, uno de los grupos condicionales en el mismo post."
+    },
+    {
+      "nombre": "MODELO_IMPRESORA",
+      "tipo": "GRUPO_CONDICIONAL",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "vive_en": "MODELO_EQUIPAMIENTO",
+      "condicion": "familia = impresora",
+      "campos": [
+        { "nombre": "tecnologia_impresion", "tipo_campo": "texto" },
+        { "nombre": "sistema_suministro", "tipo_campo": "texto" },
+        { "nombre": "es_color", "tipo_campo": "booleano" },
+        { "nombre": "formato_max", "tipo_campo": "texto" },
+        { "nombre": "ppm", "tipo_campo": "numero" }
+      ]
+    },
+    {
+      "nombre": "MODELO_PANTALLA_LUMINICA",
+      "tipo": "GRUPO_CONDICIONAL",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "vive_en": "MODELO_EQUIPAMIENTO",
+      "condicion": "familia = pantalla_luminica",
+      "campos": [
+        { "nombre": "area_util_cm", "tipo_campo": "numero" },
+        { "nombre": "temperatura_color_k", "tipo_campo": "numero" },
+        { "nombre": "intensidad_regulable", "tipo_campo": "booleano" },
+        { "nombre": "tipo_lampara", "tipo_campo": "texto" }
+      ]
+    },
+    {
+      "nombre": "MODELO_CORTADORA",
+      "tipo": "GRUPO_CONDICIONAL",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "vive_en": "MODELO_EQUIPAMIENTO",
+      "condicion": "familia = cortadora",
+      "campos": [
+        { "nombre": "tipo_corte", "tipo_campo": "texto" },
+        { "nombre": "potencia_w", "tipo_campo": "numero" },
+        { "nombre": "area_corte_cm", "tipo_campo": "numero" },
+        { "nombre": "requiere_extraccion", "tipo_campo": "booleano" }
+      ]
+    },
+    {
+      "nombre": "CONSUMIBLE",
+      "tipo": "CPT",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "campos": [
+        { "nombre": "nombre", "tipo_campo": "TITLE" },
+        { "nombre": "unidad", "tipo_campo": "texto" },
+        { "nombre": "stock_actual", "tipo_campo": "numero" },
+        { "nombre": "stock_minimo", "tipo_campo": "numero" }
+      ]
+    },
+    {
+      "nombre": "MODELO_CONSUMIBLE",
+      "tipo": "REPEATER",
+      "seccion": "Catálogo y ficha técnica · el modelo",
+      "vive_en": "MODELO_EQUIPAMIENTO",
+      "descripcion": "suministros compatibles con el modelo",
+      "campos": [
+        { "nombre": "consumible", "tipo_campo": "OBJ", "referencia": "CONSUMIBLE" },
+        { "nombre": "orden_visual", "tipo_campo": "numero" },
+        { "nombre": "modo_seguimiento", "tipo_campo": "texto" },
+        { "nombre": "es_requerido", "tipo_campo": "booleano" }
+      ]
+    },
+    {
+      "nombre": "LOCACION",
+      "tipo": "TAXONOMIA",
+      "subtipo": "jerarquica",
+      "seccion": "La unidad física · dónde está y cómo está",
+      "campos": [
+        { "nombre": "nombre", "tipo_campo": "TERM" },
+        { "nombre": "nivel", "tipo_campo": "texto" },
+        { "nombre": "term_padre", "tipo_campo": "PARENT", "referencia": "LOCACION" }
+      ]
+    },
+    {
+      "nombre": "ESTADO_EQUIPO",
+      "tipo": "TAXONOMIA",
+      "seccion": "La unidad física · dónde está y cómo está",
+      "campos": [
+        { "nombre": "nombre", "tipo_campo": "TERM" },
+        { "nombre": "permite_prestamo", "tipo_campo": "booleano" }
+      ]
+    },
+    {
+      "nombre": "EQUIPAMIENTO",
+      "tipo": "CPT",
+      "subtipo": "unidad_fisica",
+      "seccion": "La unidad física · dónde está y cómo está",
+      "campos": [
+        { "nombre": "codigo_inventario", "tipo_campo": "TITLE" },
+        { "nombre": "modelo_equipamiento", "tipo_campo": "OBJ", "referencia": "MODELO_EQUIPAMIENTO" },
+        { "nombre": "locacion_actual", "tipo_campo": "TAX", "referencia": "LOCACION" },
+        { "nombre": "estado_equipo", "tipo_campo": "TAX", "referencia": "ESTADO_EQUIPO" },
+        { "nombre": "numero_serie", "tipo_campo": "texto" },
+        { "nombre": "fecha_adquisicion", "tipo_campo": "fecha" },
+        { "nombre": "costo_adquisicion", "tipo_campo": "numero" },
+        { "nombre": "garantia_hasta", "tipo_campo": "fecha" },
+        { "nombre": "proveedor", "tipo_campo": "OBJ", "referencia": "PROVEEDOR" },
+        { "nombre": "notas", "tipo_campo": "texto" }
+      ]
+    },
+    {
+      "nombre": "MOVIMIENTO_LOCACION",
+      "tipo": "CPT",
+      "seccion": "La unidad física · dónde está y cómo está",
+      "campos": [
+        { "nombre": "equipamiento", "tipo_campo": "OBJ", "referencia": "EQUIPAMIENTO" },
+        { "nombre": "locacion_destino", "tipo_campo": "TAX", "referencia": "LOCACION" },
+        { "nombre": "fecha", "tipo_campo": "fecha" },
+        { "nombre": "autorizado_por", "tipo_campo": "USER", "referencia": "WP_USERS" }
+      ]
+    },
+    {
+      "nombre": "LECTURA_SUMINISTRO",
+      "tipo": "CPT",
+      "seccion": "La unidad física · dónde está y cómo está",
+      "campos": [
+        { "nombre": "equipamiento", "tipo_campo": "OBJ", "referencia": "EQUIPAMIENTO" },
+        { "nombre": "consumible", "tipo_campo": "OBJ", "referencia": "CONSUMIBLE" },
+        { "nombre": "porcentaje", "tipo_campo": "numero" },
+        { "nombre": "estado_manual", "tipo_campo": "texto" },
+        { "nombre": "fecha_actualizacion", "tipo_campo": "fecha" },
+        { "nombre": "actualizado_por", "tipo_campo": "USER", "referencia": "WP_USERS" }
+      ]
+    },
+    {
+      "nombre": "WP_USERS",
+      "tipo": "NATIVO_WP",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "campos": [
+        { "nombre": "user_id", "tipo_campo": "ID" },
+        { "nombre": "display_name", "tipo_campo": "texto" },
+        { "nombre": "role", "tipo_campo": "texto" }
+      ],
+      "nota": "todos los campos USER del diagrama apuntan aquí; se dibujó una sola vez para no saturar"
+    },
+    {
+      "nombre": "PROVEEDOR",
+      "tipo": "CPT",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "campos": [
+        { "nombre": "nombre", "tipo_campo": "TITLE" },
+        { "nombre": "contacto", "tipo_campo": "texto" },
+        { "nombre": "telefono", "tipo_campo": "texto" },
+        { "nombre": "email", "tipo_campo": "texto" },
+        { "nombre": "da_servicio", "tipo_campo": "booleano" }
+      ]
+    },
+    {
+      "nombre": "ORDEN_MANTENIMIENTO",
+      "tipo": "CPT",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "campos": [
+        { "nombre": "equipamiento", "tipo_campo": "OBJ", "referencia": "EQUIPAMIENTO" },
+        { "nombre": "clase", "tipo_campo": "texto", "valores": ["preventivo", "correctivo"] },
+        { "nombre": "prioridad", "tipo_campo": "texto" },
+        { "nombre": "fecha_reporte", "tipo_campo": "fecha" },
+        { "nombre": "fecha_cierre", "tipo_campo": "fecha" },
+        { "nombre": "atendido_por", "tipo_campo": "USER", "referencia": "WP_USERS" },
+        { "nombre": "proveedor", "tipo_campo": "OBJ", "referencia": "PROVEEDOR" },
+        { "nombre": "costo_mano_obra", "tipo_campo": "numero" },
+        { "nombre": "diagnostico", "tipo_campo": "texto" }
+      ]
+    },
+    {
+      "nombre": "MANTENIMIENTO_CONSUMIBLE",
+      "tipo": "REPEATER",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "vive_en": "ORDEN_MANTENIMIENTO",
+      "descripcion": "consumo del servicio",
+      "campos": [
+        { "nombre": "consumible", "tipo_campo": "OBJ", "referencia": "CONSUMIBLE" },
+        { "nombre": "cantidad", "tipo_campo": "numero" },
+        { "nombre": "costo_unitario", "tipo_campo": "numero" }
+      ]
+    },
+    {
+      "nombre": "PRESTAMO",
+      "tipo": "CPT",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "campos": [
+        { "nombre": "equipamiento", "tipo_campo": "OBJ", "referencia": "EQUIPAMIENTO" },
+        { "nombre": "prestado_a", "tipo_campo": "USER", "referencia": "WP_USERS" },
+        { "nombre": "fecha_salida", "tipo_campo": "fecha" },
+        { "nombre": "fecha_retorno_estimada", "tipo_campo": "fecha" },
+        { "nombre": "fecha_retorno_real", "tipo_campo": "fecha" },
+        { "nombre": "condicion_retorno", "tipo_campo": "texto" }
+      ]
+    },
+    {
+      "nombre": "REPORTE_FALLA",
+      "tipo": "CPT",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "campos": [
+        { "nombre": "equipamiento", "tipo_campo": "OBJ", "referencia": "EQUIPAMIENTO" },
+        { "nombre": "reportado_por", "tipo_campo": "USER", "referencia": "WP_USERS" },
+        { "nombre": "fecha", "tipo_campo": "fecha" },
+        { "nombre": "descripcion", "tipo_campo": "texto" },
+        { "nombre": "orden_generada", "tipo_campo": "OBJ", "referencia": "ORDEN_MANTENIMIENTO" }
+      ]
+    },
+    {
+      "nombre": "PLAN_MANTENIMIENTO",
+      "tipo": "CPT",
+      "seccion": "Operación · mantenimiento, préstamo, fallas",
+      "campos": [
+        { "nombre": "equipamiento", "tipo_campo": "OBJ", "referencia": "EQUIPAMIENTO" },
+        { "nombre": "fecha_programada", "tipo_campo": "fecha" },
+        { "nombre": "clase", "tipo_campo": "texto" },
+        { "nombre": "estatus", "tipo_campo": "texto" },
+        { "nombre": "orden_generada", "tipo_campo": "OBJ", "referencia": "ORDEN_MANTENIMIENTO" }
+      ]
+    }
+  ],
+  "relaciones": [
+    { "origen": "MODELO_EQUIPAMIENTO", "destino": "TIPO_EQUIPAMIENTO", "campo": "tipo_equipamiento", "tipo": "taxonomia", "cardinalidad": "N:1" },
+    { "origen": "MODELO_EQUIPAMIENTO", "destino": "MODELO_IMPRESORA", "campo": null, "tipo": "grupo_condicional_mismo_post", "condicion": "tipo_equipamiento.familia = impresora" },
+    { "origen": "MODELO_EQUIPAMIENTO", "destino": "MODELO_PANTALLA_LUMINICA", "campo": null, "tipo": "grupo_condicional_mismo_post", "condicion": "tipo_equipamiento.familia = pantalla_luminica" },
+    { "origen": "MODELO_EQUIPAMIENTO", "destino": "MODELO_CORTADORA", "campo": null, "tipo": "grupo_condicional_mismo_post", "condicion": "tipo_equipamiento.familia = cortadora" },
+    { "origen": "MODELO_EQUIPAMIENTO", "destino": "MODELO_CONSUMIBLE", "campo": null, "tipo": "repeater", "cardinalidad": "1:N", "descripcion": "1 modelo · N suministros compatibles" },
+    { "origen": "MODELO_CONSUMIBLE", "destino": "CONSUMIBLE", "campo": "consumible", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "EQUIPAMIENTO", "destino": "MODELO_EQUIPAMIENTO", "campo": "modelo_equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1", "descripcion": "1 modelo · N unidades" },
+    { "origen": "EQUIPAMIENTO", "destino": "LOCACION", "campo": "locacion_actual", "tipo": "taxonomia", "cardinalidad": "N:1" },
+    { "origen": "EQUIPAMIENTO", "destino": "ESTADO_EQUIPO", "campo": "estado_equipo", "tipo": "taxonomia", "cardinalidad": "N:1" },
+    { "origen": "EQUIPAMIENTO", "destino": "PROVEEDOR", "campo": "proveedor", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "LOCACION", "destino": "LOCACION", "campo": "term_padre", "tipo": "jerarquia_taxonomia", "cardinalidad": "N:1" },
+    { "origen": "MOVIMIENTO_LOCACION", "destino": "EQUIPAMIENTO", "campo": "equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "MOVIMIENTO_LOCACION", "destino": "LOCACION", "campo": "locacion_destino", "tipo": "taxonomia", "cardinalidad": "N:1" },
+    { "origen": "MOVIMIENTO_LOCACION", "destino": "WP_USERS", "campo": "autorizado_por", "tipo": "user_relationship", "cardinalidad": "N:1" },
+    { "origen": "LECTURA_SUMINISTRO", "destino": "EQUIPAMIENTO", "campo": "equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "LECTURA_SUMINISTRO", "destino": "CONSUMIBLE", "campo": "consumible", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "LECTURA_SUMINISTRO", "destino": "WP_USERS", "campo": "actualizado_por", "tipo": "user_relationship", "cardinalidad": "N:1" },
+    { "origen": "ORDEN_MANTENIMIENTO", "destino": "EQUIPAMIENTO", "campo": "equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "ORDEN_MANTENIMIENTO", "destino": "WP_USERS", "campo": "atendido_por", "tipo": "user_relationship", "cardinalidad": "N:1" },
+    { "origen": "ORDEN_MANTENIMIENTO", "destino": "PROVEEDOR", "campo": "proveedor", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "ORDEN_MANTENIMIENTO", "destino": "MANTENIMIENTO_CONSUMIBLE", "campo": null, "tipo": "repeater", "cardinalidad": "1:N", "descripcion": "consumo del servicio" },
+    { "origen": "MANTENIMIENTO_CONSUMIBLE", "destino": "CONSUMIBLE", "campo": "consumible", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "PRESTAMO", "destino": "EQUIPAMIENTO", "campo": "equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "PRESTAMO", "destino": "WP_USERS", "campo": "prestado_a", "tipo": "user_relationship", "cardinalidad": "N:1" },
+    { "origen": "REPORTE_FALLA", "destino": "EQUIPAMIENTO", "campo": "equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "REPORTE_FALLA", "destino": "WP_USERS", "campo": "reportado_por", "tipo": "user_relationship", "cardinalidad": "N:1" },
+    { "origen": "REPORTE_FALLA", "destino": "ORDEN_MANTENIMIENTO", "campo": "orden_generada", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "PLAN_MANTENIMIENTO", "destino": "EQUIPAMIENTO", "campo": "equipamiento", "tipo": "object_relationship", "cardinalidad": "N:1" },
+    { "origen": "PLAN_MANTENIMIENTO", "destino": "ORDEN_MANTENIMIENTO", "campo": "orden_generada", "tipo": "object_relationship", "cardinalidad": "N:1" }
+  ]
+}
