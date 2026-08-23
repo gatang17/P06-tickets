@@ -1,0 +1,237 @@
+/* =========================================================================
+   DASHBOARD — hoja de estilos única (Blocksy + Spectra)
+   Bloque: cat-dashboard
+
+   DÓNDE PEGAR ESTO
+   -----------------
+   Opción A (recomendada): Personalizar → CSS adicional (Blocksy Customizer)
+   Opción B: encolar como un único archivo .css desde el child theme
+             (wp_enqueue_style, sin PHP inline, sin Additional CSS por bloque)
+
+   NO colocar nada de esto en:
+     - El campo "Additional CSS Class(es)" -> Style de cada bloque Spectra
+       (ahí solo van los NOMBRES de clase, ver mapa de clases más abajo)
+     - Snippets PHP / Code Snippets
+     - Universal Data View (universal-data-view-block.php no se toca)
+
+   CONFIGURA ESTO PRIMERO
+   -----------------------
+   Los alias de abajo asumen una paleta Blocksy típica de 8 colores.
+   Verifica en Personalizar → General → Colores cuál slot corresponde
+   a cada rol real en tu sitio y ajusta los números si no coinciden:
+     1 = acento primario (rojo de marca, ya usado en badges "High" y la
+         línea del gráfico de ventas)
+     2 = advertencia (naranja, badge "Medium")
+     3 = información (azul, badge "Low")
+     4 = texto secundario / gris medio
+     5 = borde sutil / gris claro
+     6 = fondo alterno muy claro (fondo de tarjeta)
+     8 = fondo de página / blanco
+   ========================================================================= */
+
+:root {
+  --dashboard-accent:     var(--theme-palette-color-1);
+  --dashboard-warning:    var(--theme-palette-color-2);
+  --dashboard-info:       var(--theme-palette-color-3);
+  --dashboard-muted:      var(--theme-palette-color-4);
+  --dashboard-border:     var(--theme-palette-color-5);
+  --dashboard-bg-card:    var(--theme-palette-color-6);
+  --dashboard-bg-section: var(--theme-palette-color-8);
+
+  --dashboard-radius-card:    4px;   /* regla: 3–5px */
+  --dashboard-radius-section: 8px;
+
+  --dashboard-gap:    20px;
+  --dashboard-gap-sm: 8px;           /* separación de dashboard-alerts: 6–8px */
+}
+
+/* -------------------------------------------------------------------------
+   Contenedor raíz
+   ------------------------------------------------------------------------- */
+
+.cat-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dashboard-gap);
+}
+
+.dashboard-header p {
+  color: var(--dashboard-muted);
+  margin: 4px 0 0;
+}
+
+/* -------------------------------------------------------------------------
+   Grids
+   ------------------------------------------------------------------------- */
+
+.dashboard-grid {
+  display: grid;
+  gap: var(--dashboard-gap);
+  align-items: stretch;
+}
+
+.dashboard-grid--4 { grid-template-columns: repeat(4, 1fr); }
+.dashboard-grid--2 { grid-template-columns: repeat(2, 1fr); }
+.dashboard-grid--6 { grid-template-columns: repeat(6, 1fr); }
+
+/* Attention Required (más angosto) + Sales Activity (más ancho) */
+.dashboard-grid--main {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  align-items: start;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-section — paneles grandes (Attention, Sales, Printer
+   Readiness, Active Loans, Quick Actions)
+   ------------------------------------------------------------------------- */
+
+.dashboard-section {
+  background-color: var(--dashboard-bg-section);
+  border: 1px solid var(--dashboard-border) !important; /* mata bordes negros/heredados de Spectra */
+  border-radius: var(--dashboard-radius-section);
+  box-shadow: none !important; /* mata sombras generadas por el bloque Container de Spectra */
+  padding: 20px;
+}
+
+/* Sin desplazamiento ni glow al pasar el cursor: una sección no es "clickable" */
+.dashboard-section:hover {
+  transform: none;
+  box-shadow: none !important;
+}
+
+.dashboard-section > h2 {
+  margin: 0 0 4px;
+}
+
+.dashboard-section > p {
+  color: var(--dashboard-muted);
+  margin: 0 0 16px;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-card — KPIs, filas de alerta, stats de ventas, quick actions
+   ------------------------------------------------------------------------- */
+
+.dashboard-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: var(--dashboard-bg-card);
+  border: 1px solid var(--dashboard-border) !important;
+  border-radius: var(--dashboard-radius-card);
+  box-shadow: none !important; /* regla 2: sin sombra cuando NO es cliqueable */
+  padding: 14px 16px;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.dashboard-card.is-clickable {
+  cursor: pointer;
+}
+
+/* Hover SOLO en dispositivos con cursor real */
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-card.is-clickable:hover {
+    background-color: var(--dashboard-bg-section);
+    transform: translateY(-2px); /* máx. 2px, regla 3 */
+    box-shadow: 0 6px 16px -10px var(--dashboard-accent); /* glow discreto */
+  }
+}
+
+/* Accesible con teclado en cualquier dispositivo, no solo con hover */
+.dashboard-card.is-clickable:focus-visible {
+  outline: 2px solid var(--dashboard-accent);
+  outline-offset: 2px;
+}
+
+/* Elementos internos de la tarjeta (icono / texto / badge).
+   Extensión mínima del mapa, necesaria porque el mapa no nombra el
+   contenido interno de dashboard-card; sigue la misma convención BEM. */
+.dashboard-card__icon {
+  flex-shrink: 0;
+}
+
+.dashboard-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dashboard-card__desc {
+  color: var(--dashboard-muted);
+  margin: 2px 0 0;
+}
+
+.dashboard-card__badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--dashboard-accent);
+  background-color: var(--dashboard-bg-section);
+}
+
+.dashboard-card__badge--high {
+  color: var(--dashboard-accent);
+}
+
+.dashboard-card__badge--medium {
+  color: var(--dashboard-warning);
+}
+
+.dashboard-card__badge--low {
+  color: var(--dashboard-info);
+}
+
+.dashboard-card__chevron {
+  flex-shrink: 0;
+  color: var(--dashboard-muted);
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-alerts — lista vertical compacta dentro de Attention Required
+   ------------------------------------------------------------------------- */
+
+.dashboard-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dashboard-gap-sm); /* 6–8px, regla 4 */
+}
+
+.dashboard-alerts .dashboard-card {
+  justify-content: space-between;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-chart — contenedor del gráfico de línea de Sales Activity
+   ------------------------------------------------------------------------- */
+
+.dashboard-chart {
+  width: 100%;
+  overflow-x: auto; /* protege el gráfico en pantallas angostas */
+}
+
+/* =========================================================================
+   RESPONSIVE
+   Breakpoints alineados con Blocksy: tablet <=999px, móvil <=689px
+   ========================================================================= */
+
+@media (max-width: 999px) {
+  :root {
+    --dashboard-gap: 16px;
+  }
+
+  .dashboard-grid--4 { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-grid--6 { grid-template-columns: repeat(3, 1fr); }
+  .dashboard-grid--main { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 689px) {
+  .dashboard-grid--4,
+  .dashboard-grid--2,
+  .dashboard-grid--6,
+  .dashboard-grid--main {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-section {
+    padding: 16px;
+  }
+}
