@@ -60,6 +60,19 @@
   margin: 4px 0 0;
 }
 
+/* Variante real encontrada en el editor: dashboard-header trae hijos con
+   clase propia (dashboard-title / dashboard-description / dashboard-updated)
+   en vez de un simple h2 + p. Cubre ambos casos, no son excluyentes. */
+.dashboard-title {
+  margin: 0;
+}
+
+.dashboard-description,
+.dashboard-updated {
+  color: var(--dashboard-muted);
+  margin: 4px 0 0;
+}
+
 /* -------------------------------------------------------------------------
    Grids
    ------------------------------------------------------------------------- */
@@ -106,6 +119,52 @@
 .dashboard-section > p {
   color: var(--dashboard-muted);
   margin: 0 0 16px;
+}
+
+/* Variante real encontrada en el editor: título/descripción/link con clase
+   propia dentro de dashboard-section, en vez de un h2 + p sueltos. */
+.dashboard-panel-title {
+  margin: 0 0 4px;
+}
+
+.dashboard-panel-description {
+  color: var(--dashboard-muted);
+  margin: 0 0 16px;
+}
+
+.dashboard-panel-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--dashboard-accent);
+}
+
+/* -------------------------------------------------------------------------
+   Parches de compatibilidad con la estructura real del editor.
+   TEMPORALES: la corrección de fondo es renombrar el bloque en el editor
+   (ver instrucciones en el chat); esto evita que el layout se vea roto
+   mientras tanto.
+   ------------------------------------------------------------------------- */
+
+/* dashboard-actions estaba en la lista de clases a retirar (se reemplaza
+   por dashboard-section) pero sigue en uso: se le da el mismo tratamiento
+   de panel para que no quede sin borde/fondo/padding. Renómbralo cuando
+   puedas y borra esta regla. */
+.dashboard-actions {
+  background-color: var(--dashboard-bg-section);
+  border: 1px solid var(--dashboard-border) !important;
+  border-radius: var(--dashboard-radius-section);
+  box-shadow: none !important;
+  padding: 20px;
+}
+
+/* dashboard-secondary-grid es un wrapper adicional entre dashboard-grid--2
+   y sus dos dashboard-section (Printer Readiness / Active Loans) que no
+   estaba en el mapa original. display:contents lo saca del flujo de caja
+   sin necesidad de desarmar el bloque en el editor, para que sus dos hijos
+   sí reciban las 2 columnas de dashboard-grid--2. Elimínalo del árbol de
+   bloques cuando tengas tiempo y borra esta regla. */
+.dashboard-grid--2 > .dashboard-secondary-grid {
+  display: contents;
 }
 
 /* -------------------------------------------------------------------------
@@ -195,8 +254,22 @@
   gap: var(--dashboard-gap-sm); /* 6–8px, regla 4 */
 }
 
+/* En tu editor, título/descripción/badge de cada alerta llegan como bloques
+   apilados (no en fila), así que aquí se fuerza columna con separación
+   chica en vez de heredar la fila+centrado de .dashboard-card genérica.
+   Además se resetean los márgenes propios de cada heading/párrafo hijo,
+   que son los que están generando el hueco grande que ves ahora mismo
+   (ese espacio no lo pone Spectra, lo pone el margen por defecto del
+   tema en cada bloque de texto individual). */
 .dashboard-alerts .dashboard-card {
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.dashboard-alerts .dashboard-card > * {
+  margin: 0;
 }
 
 /* -------------------------------------------------------------------------
