@@ -138,6 +138,7 @@
    ------------------------------------------------------------------------- */
 
 .dashboard-card {
+  position: relative;
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-start;
@@ -196,6 +197,32 @@
   color: var(--dashboard-muted);
   font-size: 0.78rem;
   line-height: 1.3;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-card__title / dashboard-card__desc — tarjeta de acción con
+   título + descripción (Manage Data y similares). No es el mismo par
+   value/desc de arriba: aquí el "título" es texto normal, no un número
+   grande de KPI. Toda la tarjeta queda cliqueable con el truco del
+   "stretched link": el <a> del título se estira con ::after hasta cubrir
+   la tarjeta completa, en vez de que solo la línea de texto sea
+   cliqueable.
+   ------------------------------------------------------------------------- */
+
+.dashboard-card__title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.dashboard-card__title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-card__title a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
 /* -------------------------------------------------------------------------
