@@ -1,32 +1,30 @@
 /* =========================================================================
-   DASHBOARD — hoja de estilos única (Blocksy + Spectra)
-   Bloque: cat-dashboard
+   DASHBOARD + RECORDS — hoja de estilos única (Blocksy + Spectra)
+   Cubre: cat-dashboard, cat-data-table (Records), cat-data-view-header
 
-   DÓNDE PEGAR ESTO
-   -----------------
-   Opción A (recomendada): Personalizar → CSS adicional (Blocksy Customizer)
-   Opción B: encolar como un único archivo .css desde el child theme
-             (wp_enqueue_style, sin PHP inline, sin Additional CSS por bloque)
+   REEMPLAZA TODO el contenido de Personalizar → CSS adicional con este
+   archivo completo. No lo pegues encima de lo que ya había — bórralo
+   primero. Este archivo es la única fuente de verdad; todo lo anterior
+   (capas de "LAYOUT CORRECTIONS" / "FINAL OVERRIDES" / "REFERENCE TUNING")
+   queda reemplazado por esto.
 
    NO colocar nada de esto en:
-     - El campo "Additional CSS Class(es)" -> Style de cada bloque Spectra
-       (ahí solo van los NOMBRES de clase, ver mapa de clases más abajo)
+     - El campo "Additional CSS Class(es)" de cada bloque Spectra
      - Snippets PHP / Code Snippets
      - Universal Data View (universal-data-view-block.php no se toca)
 
    CONFIGURA ESTO PRIMERO
    -----------------------
-   Los alias de abajo asumen una paleta Blocksy típica de 8 colores.
-   Verifica en Personalizar → General → Colores cuál slot corresponde
-   a cada rol real en tu sitio y ajusta los números si no coinciden:
-     1 = acento primario (rojo de marca, ya usado en badges "High" y la
-         línea del gráfico de ventas)
-     2 = advertencia (naranja, badge "Medium")
-     3 = información (azul, badge "Low")
+   Verifica en Personalizar → General → Colores cuál slot de
+   --theme-palette-color-N corresponde a cada rol real en tu sitio:
+     1 = acento primario (rojo de marca)
+     2 = advertencia
+     3 = información
      4 = texto secundario / gris medio
      5 = borde sutil / gris claro
      6 = fondo alterno muy claro (fondo de tarjeta)
      8 = fondo de página / blanco
+   Solo se usan los slots 1–8 — ninguna regla inventa un slot 9.
    ========================================================================= */
 
 :root {
@@ -38,11 +36,11 @@
   --dashboard-bg-card:    var(--theme-palette-color-6);
   --dashboard-bg-section: var(--theme-palette-color-8);
 
-  --dashboard-radius-card:    4px;   /* regla: 3–5px */
+  --dashboard-radius-card:    4px;
   --dashboard-radius-section: 8px;
 
   --dashboard-gap:    20px;
-  --dashboard-gap-sm: 8px;           /* separación de dashboard-alerts: 6–8px */
+  --dashboard-gap-sm: 8px;
 }
 
 /* -------------------------------------------------------------------------
@@ -60,53 +58,54 @@
   margin: 4px 0 0;
 }
 
-/* Variante real encontrada en el editor: dashboard-header trae hijos con
-   clase propia (dashboard-title / dashboard-description / dashboard-updated)
-   en vez de un simple h2 + p. Cubre ambos casos, no son excluyentes. */
-.dashboard-title {
-  margin: 0;
-}
-
-.dashboard-description,
-.dashboard-updated {
-  color: var(--dashboard-muted);
-  margin: 4px 0 0;
-}
-
 /* -------------------------------------------------------------------------
    Grids
+   Nota: cada bloque Container de Spectra trae su propio grid-template-
+   columns generado (visible en gridColumnDesktop/Tablet del bloque), con
+   selector de dos clases — más específico que el nuestro de una sola
+   clase. !important aquí es la excepción documentada: es necesario para
+   que ESTA hoja, no el panel Layout de cada bloque, sea quien decide las
+   columnas.
    ------------------------------------------------------------------------- */
 
 .dashboard-grid {
-  display: grid;
-  gap: var(--dashboard-gap);
+  display: grid !important;
+  gap: var(--dashboard-gap) !important;
   align-items: stretch;
+  width: 100%;
 }
 
-.dashboard-grid--4 { grid-template-columns: repeat(4, 1fr); }
-.dashboard-grid--2 { grid-template-columns: repeat(2, 1fr); }
-.dashboard-grid--6 { grid-template-columns: repeat(6, 1fr); }
+.dashboard-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.dashboard-grid--6 { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
 
-/* Attention Required (más angosto) + Sales Activity (más ancho) */
+/* Printer Readiness / Active Loans: dos columnas iguales. */
+.dashboard-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.dashboard-grid--2 > .dashboard-section {
+  height: 100%;
+}
+
+/* Attention Required (angosto) + Sales Activity (ancho, tiene 4 stats + gráfico) */
 .dashboard-grid--main {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) !important;
   align-items: start;
 }
 
 /* -------------------------------------------------------------------------
-   dashboard-section — paneles grandes (Attention, Sales, Printer
-   Readiness, Active Loans, Quick Actions)
+   dashboard-section — paneles grandes
    ------------------------------------------------------------------------- */
 
 .dashboard-section {
+  width: 100%;
   background-color: var(--dashboard-bg-section);
-  border: 1px solid var(--dashboard-border) !important; /* mata bordes negros/heredados de Spectra */
+  border: 1px solid var(--dashboard-border) !important;
   border-radius: var(--dashboard-radius-section);
-  box-shadow: none !important; /* mata sombras generadas por el bloque Container de Spectra */
+  box-shadow: none !important;
   padding: 20px;
 }
 
-/* Sin desplazamiento ni glow al pasar el cursor: una sección no es "clickable" */
 .dashboard-section:hover {
   transform: none;
   box-shadow: none !important;
@@ -121,34 +120,9 @@
   margin: 0 0 16px;
 }
 
-/* Variante real encontrada en el editor: título/descripción/link con clase
-   propia dentro de dashboard-section, en vez de un h2 + p sueltos. */
-.dashboard-panel-title {
-  margin: 0 0 4px;
-}
-
-.dashboard-panel-description {
-  color: var(--dashboard-muted);
-  margin: 0 0 16px;
-}
-
-.dashboard-panel-link {
-  display: inline-block;
-  margin-top: 12px;
-  color: var(--dashboard-accent);
-}
-
-/* -------------------------------------------------------------------------
-   Parches de compatibilidad con la estructura real del editor.
-   TEMPORALES: la corrección de fondo es renombrar el bloque en el editor
-   (ver instrucciones en el chat); esto evita que el layout se vea roto
-   mientras tanto.
-   ------------------------------------------------------------------------- */
-
-/* dashboard-actions estaba en la lista de clases a retirar (se reemplaza
-   por dashboard-section) pero sigue en uso: se le da el mismo tratamiento
-   de panel para que no quede sin borde/fondo/padding. Renómbralo cuando
-   puedas y borra esta regla. */
+/* dashboard-actions: puente temporal mientras retiras la clase vieja del
+   bloque Quick Actions (ya trae dashboard-section también, así que esto
+   es redundante pero inofensivo). */
 .dashboard-actions {
   background-color: var(--dashboard-bg-section);
   border: 1px solid var(--dashboard-border) !important;
@@ -157,143 +131,172 @@
   padding: 20px;
 }
 
-/* dashboard-secondary-grid es un wrapper adicional entre dashboard-grid--2
-   y sus dos dashboard-section (Printer Readiness / Active Loans) que no
-   estaba en el mapa original. display:contents lo saca del flujo de caja
-   sin necesidad de desarmar el bloque en el editor, para que sus dos hijos
-   sí reciban las 2 columnas de dashboard-grid--2. Elimínalo del árbol de
-   bloques cuando tengas tiempo y borra esta regla. */
-.dashboard-grid--2 > .dashboard-secondary-grid {
-  display: contents;
-}
-
 /* -------------------------------------------------------------------------
-   dashboard-card — KPIs, filas de alerta, stats de ventas, quick actions
+   dashboard-card — base: contenido apilado en columna. Ninguna tarjeta de
+   tu página usa ícono+texto en fila, así que la base ya no asume eso.
    ------------------------------------------------------------------------- */
 
 .dashboard-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
   background-color: var(--dashboard-bg-card);
   border: 1px solid var(--dashboard-border) !important;
   border-radius: var(--dashboard-radius-card);
-  box-shadow: none !important; /* regla 2: sin sombra cuando NO es cliqueable */
+  box-shadow: none !important;
   padding: 14px 16px;
   transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.dashboard-card > * {
+  margin: 0 !important;
 }
 
 .dashboard-card.is-clickable {
   cursor: pointer;
 }
 
-/* Hover SOLO en dispositivos con cursor real */
 @media (hover: hover) and (pointer: fine) {
   .dashboard-card.is-clickable:hover {
     background-color: var(--dashboard-bg-section);
-    transform: translateY(-2px); /* máx. 2px, regla 3 */
-    box-shadow: 0 6px 16px -10px var(--dashboard-accent); /* glow discreto */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px -10px var(--dashboard-accent);
   }
 }
 
-/* Accesible con teclado en cualquier dispositivo, no solo con hover */
-.dashboard-card.is-clickable:focus-visible {
+.dashboard-card.is-clickable:focus-visible,
+.dashboard-card.is-clickable a:focus-visible {
   outline: 2px solid var(--dashboard-accent);
   outline-offset: 2px;
 }
 
-/* Elementos internos de la tarjeta (icono / texto / badge).
-   Extensión mínima del mapa, necesaria porque el mapa no nombra el
-   contenido interno de dashboard-card; sigue la misma convención BEM. */
-.dashboard-card__icon {
-  flex-shrink: 0;
-}
+/* -------------------------------------------------------------------------
+   Tarjetas dentro de dashboard-grid--4 (los 4 KPI de arriba y las 4
+   estadísticas de Sales Activity): número grande arriba, etiqueta chica
+   abajo. Selectores por posición — no requieren agregar clases nuevas a
+   cada párrafo, solo funcionan con el orden real de tu contenido
+   (número, luego título opcional, luego descripción/etiqueta).
+   ------------------------------------------------------------------------- */
 
-.dashboard-card__body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.dashboard-card__desc {
-  color: var(--dashboard-muted);
-  margin: 2px 0 0;
-}
-
-.dashboard-card__badge {
-  flex-shrink: 0;
-  border-radius: 999px;
-  padding: 4px 10px;
-  color: var(--dashboard-accent);
-  background-color: var(--dashboard-bg-section);
-}
-
-.dashboard-card__badge--high {
-  color: var(--dashboard-accent);
-}
-
-.dashboard-card__badge--medium {
-  color: var(--dashboard-warning);
-}
-
-.dashboard-card__badge--low {
+.dashboard-grid--4 > .dashboard-card > p:first-child {
   color: var(--dashboard-info);
+  font-weight: 700;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  line-height: 1;
 }
 
-.dashboard-card__chevron {
-  flex-shrink: 0;
+.dashboard-grid--4 > .dashboard-card > h3 {
+  font-size: 0.95rem;
+}
+
+.dashboard-grid--4 > .dashboard-card > p:last-child {
   color: var(--dashboard-muted);
+  font-size: 0.78rem;
+  line-height: 1.3;
 }
 
 /* -------------------------------------------------------------------------
-   dashboard-alerts — lista vertical compacta dentro de Attention Required
+   dashboard-alerts — lista compacta dentro de Attention Required.
+   Cada fila: título arriba-izquierda, descripción abajo-izquierda,
+   badge de estado a la derecha ocupando ambas filas.
    ------------------------------------------------------------------------- */
 
 .dashboard-alerts {
-  display: flex;
-  flex-direction: column;
-  gap: var(--dashboard-gap-sm); /* 6–8px, regla 4 */
+  display: flex !important;
+  flex-direction: column !important;
+  gap: var(--dashboard-gap-sm) !important;
+  width: 100%;
 }
 
-/* En tu editor, título/descripción/badge de cada alerta llegan como bloques
-   apilados (no en fila), así que aquí se fuerza columna con separación
-   chica en vez de heredar la fila+centrado de .dashboard-card genérica.
-   Además se resetean los márgenes propios de cada heading/párrafo hijo,
-   que son los que están generando el hueco grande que ves ahora mismo
-   (ese espacio no lo pone Spectra, lo pone el margen por defecto del
-   tema en cada bloque de texto individual). */
-.dashboard-alerts .dashboard-card {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 4px;
+.dashboard-alerts > .dashboard-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
 }
 
-.dashboard-alerts .dashboard-card > * {
-  margin: 0;
+.dashboard-alerts > .dashboard-card > h4 {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 0.94rem;
+}
+
+.dashboard-alerts > .dashboard-card > p:first-of-type {
+  grid-column: 1;
+  grid-row: 2;
+  color: var(--dashboard-muted);
+  font-size: 0.78rem;
+}
+
+.dashboard-alerts > .dashboard-card > p:last-child {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: end;
+  padding: 4px 10px !important;
+  color: var(--dashboard-accent);
+  background-color: var(--dashboard-bg-section);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* -------------------------------------------------------------------------
-   dashboard-chart — contenedor del gráfico de línea de Sales Activity
+   dashboard-chart
    ------------------------------------------------------------------------- */
 
 .dashboard-chart {
   width: 100%;
-  overflow-x: auto; /* protege el gráfico en pantallas angostas */
+  min-height: 160px;
+  overflow-x: auto;
 }
 
-/* =========================================================================
-   RESPONSIVE
-   Breakpoints alineados con Blocksy: tablet <=999px, móvil <=689px
-   ========================================================================= */
+/* -------------------------------------------------------------------------
+   Enlaces del dashboard
+   ------------------------------------------------------------------------- */
+
+.dashboard-link a {
+  color: var(--dashboard-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dashboard-link a:hover,
+.dashboard-link a:focus-visible {
+  text-decoration: underline;
+}
+
+.dashboard-action-link a {
+  display: block;
+  width: 100%;
+  color: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.dashboard-card.is-clickable .dashboard-action-link a:hover {
+  color: var(--dashboard-accent);
+}
+
+/* -------------------------------------------------------------------------
+   RESPONSIVE — alineado con Blocksy: tablet <=999px, móvil <=689px
+   ------------------------------------------------------------------------- */
 
 @media (max-width: 999px) {
-  :root {
-    --dashboard-gap: 16px;
-  }
+  :root { --dashboard-gap: 16px; }
 
-  .dashboard-grid--4 { grid-template-columns: repeat(2, 1fr); }
-  .dashboard-grid--6 { grid-template-columns: repeat(3, 1fr); }
-  .dashboard-grid--main { grid-template-columns: 1fr; }
+  .dashboard-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .dashboard-grid--6 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .dashboard-grid--main { grid-template-columns: 1fr !important; }
 }
 
 @media (max-width: 689px) {
@@ -301,10 +304,202 @@
   .dashboard-grid--2,
   .dashboard-grid--6,
   .dashboard-grid--main {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 
-  .dashboard-section {
-    padding: 16px;
+  .dashboard-section { padding: 16px; }
+}
+
+/* =========================================================================
+   RECORDS — CAT Dynamic Data Table
+   Bloque PHP: cat/dynamic-table (archivo separado)
+   ========================================================================= */
+
+.cat-data-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--theme-palette-color-8);
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 3px;
+  color: var(--theme-palette-color-4);
+}
+
+.cat-data-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cat-data-table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+}
+
+.cat-data-table th,
+.cat-data-table td {
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--theme-palette-color-5);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cat-data-table th {
+  white-space: nowrap;
+  background: var(--theme-palette-color-6);
+  color: var(--theme-palette-color-4);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.cat-data-table td {
+  color: var(--theme-palette-color-4);
+  font-size: 0.9rem;
+}
+
+.cat-data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cat-data-row--clickable { cursor: pointer; }
+
+.cat-data-row--clickable td {
+  transition: background-color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-data-row--clickable:hover td {
+    background: var(--theme-palette-color-6);
   }
+}
+
+.cat-data-row--clickable:focus-visible {
+  outline: 2px solid var(--theme-palette-color-1);
+  outline-offset: -2px;
+}
+
+.cat-data-table a {
+  color: var(--theme-palette-color-1);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cat-data-table a:hover,
+.cat-data-table a:focus-visible {
+  text-decoration: underline;
+}
+
+.cat-data-table__image {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 3px;
+}
+
+.cat-data-table__empty {
+  padding: 18px;
+  background: var(--theme-palette-color-6);
+  border: 1px dashed var(--theme-palette-color-5);
+  border-radius: 3px;
+  color: var(--theme-palette-color-4);
+  text-align: center;
+}
+
+@media (max-width: 782px) {
+  .cat-data-table th,
+  .cat-data-table td { padding: 10px 12px; }
+  .cat-data-table th { font-size: 0.64rem; }
+  .cat-data-table td { font-size: 0.84rem; }
+}
+
+/* =========================================================================
+   RECORDS — cabecera con pestañas (cat_view=printers|alerts|loans|sales)
+   ========================================================================= */
+
+.cat-data-view-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 24px;
+  margin: 0 0 24px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--theme-palette-color-5);
+}
+
+.cat-data-view-eyebrow {
+  margin: 0 0 6px;
+  color: var(--theme-palette-color-1);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cat-data-view-title { margin: 0; }
+
+.cat-data-view-description {
+  max-width: 62ch;
+  margin: 7px 0 0;
+  color: var(--theme-palette-color-4);
+}
+
+.cat-data-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cat-data-view-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  color: var(--theme-palette-color-4);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--theme-palette-color-6);
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 3px;
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.cat-data-view-tab:hover,
+.cat-data-view-tab:focus-visible {
+  color: var(--theme-palette-color-1);
+  background: var(--theme-palette-color-8);
+  border-color: var(--theme-palette-color-1);
+}
+
+.cat-data-view-tab.is-active {
+  color: var(--theme-palette-color-8);
+  background: var(--theme-palette-color-1);
+  border-color: var(--theme-palette-color-1);
+}
+
+@media (max-width: 782px) {
+  .cat-data-view-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 16px;
+  }
+  .cat-data-view-tabs { justify-content: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .cat-data-view-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .cat-data-view-tab { width: 100%; }
 }
