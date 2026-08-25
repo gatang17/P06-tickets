@@ -47,7 +47,8 @@
    Contenedor raíz
    ------------------------------------------------------------------------- */
 
-.cat-dashboard {
+.cat-dashboard,
+.cat-manage-data {
   display: flex;
   flex-direction: column;
   gap: var(--dashboard-gap);
