@@ -17,7 +17,7 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 
 	final class CAT_Universal_ACF_Form_Block {
 
-		const VERSION       = '1.2.0';
+		const VERSION       = '1.3.0';
 		const BLOCK_NAME    = 'cat/universal-acf-form';
 		const SCRIPT_HANDLE = 'cat-universal-acf-form-editor';
 
@@ -237,11 +237,12 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 			$field_groups = self::get_field_group_keys_for_post_type( $post_type );
 			$submit_label = 'edit' === $mode ? $attributes['updateLabel'] : $attributes['createLabel'];
 			$return_url   = self::build_return_url( $attributes['returnUrl'] );
+			$show_title   = self::should_show_post_title( $post_type, $attributes );
 
 			$form_args = array(
 				'id'                    => 'cat-uacf-form-' . wp_unique_id(),
 				'post_id'               => 'edit' === $mode ? $record_id : 'new_post',
-				'post_title'            => (bool) $attributes['showPostTitle'],
+				'post_title'            => $show_title,
 				'post_content'          => (bool) $attributes['showPostContent'],
 				'field_groups'          => ! empty( $field_groups ) ? $field_groups : false,
 				'form'                  => true,
@@ -345,6 +346,27 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 				'acf-ui-options-page',
 				'spectra-popup',
 			);
+		}
+
+		/**
+		 * Post types whose title is generated automatically elsewhere
+		 * (e.g. cat-equipment-auto-title.php builds "Model — Workstation —
+		 * Location" for equipment on save) and must never show a manual
+		 * WordPress title field, regardless of the block's own
+		 * showPostTitle toggle - that toggle is shared across every entity
+		 * this one block serves via ?entity=, so it can't tell "equipment"
+		 * apart from "person" or "supplier" on its own.
+		 */
+		private static function post_types_with_auto_title() {
+			return array( 'equipment' );
+		}
+
+		private static function should_show_post_title( $post_type, $attributes ) {
+			if ( in_array( $post_type, self::post_types_with_auto_title(), true ) ) {
+				return false;
+			}
+
+			return (bool) $attributes['showPostTitle'];
 		}
 
 		private static function is_manageable_post_type( $post_type ) {
