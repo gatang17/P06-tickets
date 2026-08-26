@@ -565,3 +565,82 @@
   background-color: var(--theme-palette-color-6);
   border-color: var(--theme-palette-color-5);
 }
+
+/* -------------------------------------------------------------------------
+   CAT Universal ACF Form — botones de acción (Submit + Delete)
+   Reutilizables: .cat-uacf-btn es la base, .cat-uacf-btn--primary y
+   --secondary son las dos variantes. Ambos botones viven fuera de sus
+   respectivos <form> (ver cat-universal-acf-form-block.php - usan el
+   atributo HTML5 form="..." para enviar el formulario correcto), así que
+   .cat-uacf-form__actions puede alinearlos juntos con flexbox sin pelear
+   con el HTML que genera ACF.
+   ------------------------------------------------------------------------- */
+
+.cat-uacf-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--theme-palette-color-5);
+}
+
+.cat-uacf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 20px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.cat-uacf-btn--primary {
+  color: var(--theme-palette-color-8);
+  background-color: var(--theme-palette-color-1);
+  border-color: var(--theme-palette-color-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-uacf-btn--primary:hover {
+    background-color: var(--theme-palette-color-2);
+    border-color: var(--theme-palette-color-2);
+  }
+}
+
+.cat-uacf-btn--secondary {
+  color: var(--theme-palette-color-1);
+  background-color: transparent;
+  border-color: var(--theme-palette-color-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-uacf-btn--secondary:hover {
+    color: var(--theme-palette-color-8);
+    background-color: var(--theme-palette-color-1);
+  }
+}
+
+.cat-uacf-btn:focus-visible {
+  outline: 2px solid var(--theme-palette-color-1);
+  outline-offset: 2px;
+}
+
+/* ACF's own submit button is suppressed (empty html_submit_button) since
+   cat-uacf-form__actions now renders both buttons itself - hide the empty
+   wrapper ACF still leaves behind. */
+.acf-form-submit {
+  display: none;
+}
+
+/* Carries only hidden inputs now - its visible button lives in
+   cat-uacf-form__actions and targets it via form="...". */
+.cat-uacf-form__delete-form {
+  display: none;
+}

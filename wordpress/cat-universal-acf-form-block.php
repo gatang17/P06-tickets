@@ -17,7 +17,7 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 
 	final class CAT_Universal_ACF_Form_Block {
 
-		const VERSION       = '1.4.0';
+		const VERSION       = '1.5.0';
 		const BLOCK_NAME    = 'cat/universal-acf-form';
 		const SCRIPT_HANDLE = 'cat-universal-acf-form-editor';
 
@@ -273,8 +273,10 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 			$return_url       = self::build_return_url( $return_url_input );
 			$show_title       = self::should_show_post_title( $post_type, $attributes );
 
+			$form_id = 'cat-uacf-form-' . wp_unique_id();
+
 			$form_args = array(
-				'id'                    => 'cat-uacf-form-' . wp_unique_id(),
+				'id'                    => $form_id,
 				'post_id'               => 'edit' === $mode ? $record_id : 'new_post',
 				'post_title'            => $show_title,
 				'post_content'          => (bool) $attributes['showPostContent'],
@@ -285,7 +287,17 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 				'updated_message'       => __( 'The record was saved successfully.', 'cat-uacf' ),
 				'label_placement'       => 'top',
 				'instruction_placement' => 'label',
-				'html_submit_button'    => '<button type="submit" class="cat-uacf-form__submit button button-primary">%s</button>',
+				// ACF's own submit button is suppressed here (empty template)
+				// because it lives inside this <form>, while Delete has to
+				// live in a separate <form> (forms can't nest) - there's no
+				// way to make ACF's own button and a sibling form's button
+				// share one flex row while each stays physically inside its
+				// own <form>. Instead cat-uacf-form__actions below renders
+				// both buttons itself, outside of and after both forms, each
+				// using the HTML5 form="..." attribute to submit the correct
+				// <form> regardless of where the button actually sits in the
+				// DOM - so they can be laid out together with plain CSS.
+				'html_submit_button'    => '',
 				'form_attributes'       => array(
 					'class' => 'cat-uacf-form__form',
 				),
@@ -316,15 +328,27 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 				)
 			);
 
+			$show_delete = 'edit' === $mode && ! empty( $attributes['enableDelete'] ) && current_user_can( 'delete_post', $record_id );
+			$delete_form_id = $show_delete ? 'cat-uacf-delete-form-' . $record_id : '';
+
 			ob_start();
 			echo '<section ' . $wrapper_attributes . '>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo self::status_notice_from_request(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			acf_form( $form_args );
 
-			if ( 'edit' === $mode && ! empty( $attributes['enableDelete'] ) && current_user_can( 'delete_post', $record_id ) ) {
+			if ( $show_delete ) {
 				self::$frontend_script_needed = true;
-				echo self::render_delete_form( $record_id, $post_type, $attributes ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				// Hidden - carries only the nonce and identifying fields.
+				// Its visible button lives in cat-uacf-form__actions below.
+				echo self::render_delete_form( $record_id, $post_type, $attributes, $delete_form_id ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			}
+
+			echo '<div class="cat-uacf-form__actions">';
+			echo '<button type="submit" form="' . esc_attr( $form_id ) . '" class="cat-uacf-btn cat-uacf-btn--primary">' . esc_html( $submit_label ) . '</button>';
+			if ( $show_delete ) {
+				echo '<button type="submit" form="' . esc_attr( $delete_form_id ) . '" class="cat-uacf-btn cat-uacf-btn--secondary">' . esc_html( $attributes['deleteLabel'] ) . '</button>';
+			}
+			echo '</div>';
 
 			echo '</section>';
 
@@ -520,7 +544,14 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 			);
 		}
 
-		private static function render_delete_form( $record_id, $post_type, $attributes ) {
+		/**
+		 * Hidden form - carries only the nonce and identifying fields. Its
+		 * visible button is rendered separately, outside both this form and
+		 * the ACF form, in cat-uacf-form__actions, and submits this form via
+		 * the HTML5 form="$delete_form_id" attribute instead of being nested
+		 * inside it.
+		 */
+		private static function render_delete_form( $record_id, $post_type, $attributes, $delete_form_id ) {
 			$return_url = trim( (string) $attributes['deleteReturnUrl'] );
 			if ( ! $return_url ) {
 				$return_url = remove_query_arg(
@@ -531,13 +562,12 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 
 			$return_url = wp_validate_redirect( $return_url, home_url( '/' ) );
 
-			$out  = '<form method="post" class="cat-uacf-form__delete-form" data-cat-uacf-delete-form data-confirmation="' . esc_attr( $attributes['deleteConfirmation'] ) . '">';
+			$out  = '<form method="post" id="' . esc_attr( $delete_form_id ) . '" class="cat-uacf-form__delete-form" data-cat-uacf-delete-form data-confirmation="' . esc_attr( $attributes['deleteConfirmation'] ) . '">';
 			$out .= '<input type="hidden" name="cat_uacf_action" value="delete">';
 			$out .= '<input type="hidden" name="cat_uacf_record_id" value="' . esc_attr( $record_id ) . '">';
 			$out .= '<input type="hidden" name="cat_uacf_post_type" value="' . esc_attr( $post_type ) . '">';
 			$out .= '<input type="hidden" name="cat_uacf_delete_return" value="' . esc_url( $return_url ) . '">';
 			$out .= wp_nonce_field( 'cat_uacf_delete_' . $record_id, '_cat_uacf_nonce', true, false );
-			$out .= '<button type="submit" class="cat-uacf-form__delete button button-secondary">' . esc_html( $attributes['deleteLabel'] ) . '</button>';
 			$out .= '</form>';
 
 			return $out;
