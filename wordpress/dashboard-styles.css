@@ -531,3 +531,37 @@
   }
   .cat-data-view-tab { width: 100%; }
 }
+
+/* =========================================================================
+   CAT Universal ACF Form — aviso de estado (creado/actualizado/borrado)
+   Se muestra tanto dentro del propio formulario como, vía el filtro
+   the_content de cat-universal-acf-form-block.php, en cualquier otra
+   página a la que "After-create URL" te redirija (por ejemplo Dashboard).
+   ========================================================================= */
+
+.cat-uacf-form__notice {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 4px;
+  font-size: 0.92rem;
+}
+
+.cat-uacf-form__notice--success {
+  color: var(--theme-palette-color-4);
+  background-color: var(--theme-palette-color-6);
+  border-color: var(--theme-palette-color-1);
+}
+
+.cat-uacf-form__notice--error {
+  color: var(--theme-palette-color-1);
+  background-color: var(--theme-palette-color-6);
+  border-color: var(--theme-palette-color-1);
+}
+
+.cat-uacf-form__notice--warning,
+.cat-uacf-form__notice--info {
+  color: var(--theme-palette-color-4);
+  background-color: var(--theme-palette-color-6);
+  border-color: var(--theme-palette-color-5);
+}

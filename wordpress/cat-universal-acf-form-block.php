@@ -17,7 +17,7 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 
 	final class CAT_Universal_ACF_Form_Block {
 
-		const VERSION       = '1.3.0';
+		const VERSION       = '1.4.0';
 		const BLOCK_NAME    = 'cat/universal-acf-form';
 		const SCRIPT_HANDLE = 'cat-universal-acf-form-editor';
 
@@ -30,6 +30,33 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 			add_action( 'template_redirect', array( __CLASS__, 'prepare_frontend' ), 1 );
 			add_action( 'template_redirect', array( __CLASS__, 'handle_delete_request' ), 2 );
 			add_action( 'wp_footer', array( __CLASS__, 'print_frontend_script' ), 99 );
+			add_filter( 'the_content', array( __CLASS__, 'maybe_prepend_status_banner' ) );
+		}
+
+		/**
+		 * Shows the "saved"/"deleted" notice on whatever page cat_form_status
+		 * lands on - a create can now redirect somewhere that has no
+		 * cat/universal-acf-form block on it at all (e.g. the Dashboard), so
+		 * the notice can't rely on that block's own render output. Skipped
+		 * when the current page DOES contain the block, since its own
+		 * render_block() already shows the same notice - this only fills the
+		 * gap for pages that don't.
+		 */
+		public static function maybe_prepend_status_banner( $content ) {
+			if ( ! is_singular() || ! in_the_loop() || ! is_main_query() ) {
+				return $content;
+			}
+
+			if ( ! isset( $_GET['cat_form_status'] ) ) {
+				return $content;
+			}
+
+			$post = get_post();
+			if ( $post && has_block( self::BLOCK_NAME, $post ) ) {
+				return $content;
+			}
+
+			return self::status_notice_from_request() . $content;
 		}
 
 		/**
@@ -152,6 +179,10 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 					'type'    => 'string',
 					'default' => '',
 				),
+				'createReturnUrl' => array(
+					'type'    => 'string',
+					'default' => '',
+				),
 				'deleteReturnUrl' => array(
 					'type'    => 'string',
 					'default' => '',
@@ -234,10 +265,13 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 				return self::notice( $attributes['permissionMessage'], 'error' );
 			}
 
-			$field_groups = self::get_field_group_keys_for_post_type( $post_type );
-			$submit_label = 'edit' === $mode ? $attributes['updateLabel'] : $attributes['createLabel'];
-			$return_url   = self::build_return_url( $attributes['returnUrl'] );
-			$show_title   = self::should_show_post_title( $post_type, $attributes );
+			$field_groups     = self::get_field_group_keys_for_post_type( $post_type );
+			$submit_label     = 'edit' === $mode ? $attributes['updateLabel'] : $attributes['createLabel'];
+			$return_url_input = 'create' === $mode && trim( (string) $attributes['createReturnUrl'] )
+				? $attributes['createReturnUrl']
+				: $attributes['returnUrl'];
+			$return_url       = self::build_return_url( $return_url_input );
+			$show_title       = self::should_show_post_title( $post_type, $attributes );
 
 			$form_args = array(
 				'id'                    => 'cat-uacf-form-' . wp_unique_id(),
@@ -682,6 +716,7 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 			deleteLabel: { type: 'string', default: 'Delete' },
 			deleteConfirmation: { type: 'string', default: 'Are you sure you want to move this record to the trash?' },
 			returnUrl: { type: 'string', default: '' },
+			createReturnUrl: { type: 'string', default: '' },
 			deleteReturnUrl: { type: 'string', default: '' },
 			loginMessage: { type: 'string', default: 'You must be logged in to manage records.' },
 			permissionMessage: { type: 'string', default: 'You do not have permission to perform this action.' },
@@ -775,7 +810,8 @@ if ( ! class_exists( 'CAT_Universal_ACF_Form_Block' ) ) {
 						el(ToggleControl, { label: __('Allow delete while editing', 'cat-uacf'), checked: a.enableDelete, onChange: function (value) { set({ enableDelete: value }); } }),
 						a.enableDelete && el(TextControl, { label: __('Delete button label', 'cat-uacf'), value: a.deleteLabel, onChange: function (value) { set({ deleteLabel: value }); } }),
 						a.enableDelete && el(TextControl, { label: __('Delete confirmation', 'cat-uacf'), value: a.deleteConfirmation, onChange: function (value) { set({ deleteConfirmation: value }); } }),
-						el(TextControl, { label: __('After-save URL', 'cat-uacf'), help: __('Leave empty to return to this page.', 'cat-uacf'), value: a.returnUrl, onChange: function (value) { set({ returnUrl: value }); } }),
+						el(TextControl, { label: __('After-save URL', 'cat-uacf'), help: __('Used after updating an existing record (and after creating one, if After-create URL below is left empty). Leave empty to return to this page.', 'cat-uacf'), value: a.returnUrl, onChange: function (value) { set({ returnUrl: value }); } }),
+						el(TextControl, { label: __('After-create URL', 'cat-uacf'), help: __('Where a brand-new record sends you after saving - e.g. back to the Dashboard, instead of staying on this same edit form. Leave empty to use After-save URL above.', 'cat-uacf'), value: a.createReturnUrl, onChange: function (value) { set({ createReturnUrl: value }); } }),
 						el(TextControl, { label: __('After-delete URL', 'cat-uacf'), help: __('Leave empty to return to this page without the record ID.', 'cat-uacf'), value: a.deleteReturnUrl, onChange: function (value) { set({ deleteReturnUrl: value }); } })
 					),
 					el(
