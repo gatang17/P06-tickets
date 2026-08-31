@@ -1,0 +1,646 @@
+/* =========================================================================
+   DASHBOARD + RECORDS — hoja de estilos única (Blocksy + Spectra)
+   Cubre: cat-dashboard, cat-data-table (Records), cat-data-view-header
+
+   REEMPLAZA TODO el contenido de Personalizar → CSS adicional con este
+   archivo completo. No lo pegues encima de lo que ya había — bórralo
+   primero. Este archivo es la única fuente de verdad; todo lo anterior
+   (capas de "LAYOUT CORRECTIONS" / "FINAL OVERRIDES" / "REFERENCE TUNING")
+   queda reemplazado por esto.
+
+   NO colocar nada de esto en:
+     - El campo "Additional CSS Class(es)" de cada bloque Spectra
+     - Snippets PHP / Code Snippets
+     - Universal Data View (universal-data-view-block.php no se toca)
+
+   CONFIGURA ESTO PRIMERO
+   -----------------------
+   Verifica en Personalizar → General → Colores cuál slot de
+   --theme-palette-color-N corresponde a cada rol real en tu sitio:
+     1 = acento primario (rojo de marca)
+     2 = advertencia
+     3 = información
+     4 = texto secundario / gris medio
+     5 = borde sutil / gris claro
+     6 = fondo alterno muy claro (fondo de tarjeta)
+     8 = fondo de página / blanco
+   Solo se usan los slots 1–8 — ninguna regla inventa un slot 9.
+   ========================================================================= */
+
+:root {
+  --dashboard-accent:     var(--theme-palette-color-1);
+  --dashboard-warning:    var(--theme-palette-color-2);
+  --dashboard-info:       var(--theme-palette-color-3);
+  --dashboard-muted:      var(--theme-palette-color-4);
+  --dashboard-border:     var(--theme-palette-color-5);
+  --dashboard-bg-card:    var(--theme-palette-color-6);
+  --dashboard-bg-section: var(--theme-palette-color-8);
+
+  --dashboard-radius-card:    4px;
+  --dashboard-radius-section: 8px;
+
+  --dashboard-gap:    20px;
+  --dashboard-gap-sm: 8px;
+}
+
+/* -------------------------------------------------------------------------
+   Contenedor raíz
+   ------------------------------------------------------------------------- */
+
+.cat-dashboard,
+.cat-manage-data {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dashboard-gap);
+}
+
+.dashboard-header p {
+  color: var(--dashboard-muted);
+  margin: 4px 0 0;
+}
+
+/* -------------------------------------------------------------------------
+   Grids
+   Nota: cada bloque Container de Spectra trae su propio grid-template-
+   columns generado (visible en gridColumnDesktop/Tablet del bloque), con
+   selector de dos clases — más específico que el nuestro de una sola
+   clase. !important aquí es la excepción documentada: es necesario para
+   que ESTA hoja, no el panel Layout de cada bloque, sea quien decide las
+   columnas.
+   ------------------------------------------------------------------------- */
+
+.dashboard-grid {
+  display: grid !important;
+  gap: var(--dashboard-gap) !important;
+  align-items: stretch;
+  width: 100%;
+}
+
+.dashboard-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.dashboard-grid--6 { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+
+/* Printer Readiness / Active Loans: dos columnas iguales. */
+.dashboard-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.dashboard-grid--2 > .dashboard-section {
+  height: 100%;
+}
+
+/* Attention Required (angosto) + Sales Activity (ancho, tiene 4 stats + gráfico) */
+.dashboard-grid--main {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) !important;
+  align-items: start;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-section — paneles grandes
+   ------------------------------------------------------------------------- */
+
+.dashboard-section {
+  width: 100%;
+  background-color: var(--dashboard-bg-section);
+  border: 1px solid var(--dashboard-border) !important;
+  border-radius: var(--dashboard-radius-section);
+  box-shadow: none !important;
+  padding: 20px;
+}
+
+.dashboard-section:hover {
+  transform: none;
+  box-shadow: none !important;
+}
+
+.dashboard-section > h2 {
+  margin: 0 0 4px;
+}
+
+.dashboard-section > p {
+  color: var(--dashboard-muted);
+  margin: 0 0 16px;
+}
+
+/* dashboard-actions: puente temporal mientras retiras la clase vieja del
+   bloque Quick Actions (ya trae dashboard-section también, así que esto
+   es redundante pero inofensivo). */
+.dashboard-actions {
+  background-color: var(--dashboard-bg-section);
+  border: 1px solid var(--dashboard-border) !important;
+  border-radius: var(--dashboard-radius-section);
+  box-shadow: none !important;
+  padding: 20px;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-card — base: contenido apilado en columna. Ninguna tarjeta de
+   tu página usa ícono+texto en fila, así que la base ya no asume eso.
+   ------------------------------------------------------------------------- */
+
+.dashboard-card {
+  position: relative;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  background-color: var(--dashboard-bg-card);
+  border: 1px solid var(--dashboard-border) !important;
+  border-radius: var(--dashboard-radius-card);
+  box-shadow: none !important;
+  padding: 14px 16px;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.dashboard-card > * {
+  margin: 0 !important;
+}
+
+.dashboard-card.is-clickable {
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-card.is-clickable:hover {
+    background-color: var(--dashboard-bg-section);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px -10px var(--dashboard-accent);
+  }
+}
+
+.dashboard-card.is-clickable:focus-visible,
+.dashboard-card.is-clickable a:focus-visible {
+  outline: 2px solid var(--dashboard-accent);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------
+   Tarjetas dentro de dashboard-grid--4 (los 4 KPI de arriba y las 4
+   estadísticas de Sales Activity): número grande arriba, etiqueta chica
+   abajo. Selectores por posición — no requieren agregar clases nuevas a
+   cada párrafo, solo funcionan con el orden real de tu contenido
+   (número, luego título opcional, luego descripción/etiqueta).
+   ------------------------------------------------------------------------- */
+
+.dashboard-grid--4 > .dashboard-card > p:first-child {
+  color: var(--dashboard-info);
+  font-weight: 700;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  line-height: 1;
+}
+
+.dashboard-grid--4 > .dashboard-card > h3 {
+  font-size: 0.95rem;
+}
+
+.dashboard-grid--4 > .dashboard-card > p:last-child {
+  color: var(--dashboard-muted);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-card__title / dashboard-card__desc — tarjeta de acción con
+   título + descripción (Manage Data y similares). No es el mismo par
+   value/desc de arriba: aquí el "título" es texto normal, no un número
+   grande de KPI. Toda la tarjeta queda cliqueable con el truco del
+   "stretched link": el <a> del título se estira con ::after hasta cubrir
+   la tarjeta completa, en vez de que solo la línea de texto sea
+   cliqueable.
+   ------------------------------------------------------------------------- */
+
+.dashboard-card__title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.dashboard-card__title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-card__title a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-alerts — lista compacta dentro de Attention Required.
+   Cada fila: título arriba-izquierda, descripción abajo-izquierda,
+   badge de estado a la derecha ocupando ambas filas.
+   ------------------------------------------------------------------------- */
+
+.dashboard-alerts {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: var(--dashboard-gap-sm) !important;
+  width: 100%;
+}
+
+.dashboard-alerts > .dashboard-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+}
+
+.dashboard-alerts > .dashboard-card > h4 {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 0.94rem;
+}
+
+.dashboard-alerts > .dashboard-card > p:first-of-type {
+  grid-column: 1;
+  grid-row: 2;
+  color: var(--dashboard-muted);
+  font-size: 0.78rem;
+}
+
+.dashboard-alerts > .dashboard-card > p:last-child {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: end;
+  padding: 4px 10px !important;
+  color: var(--dashboard-accent);
+  background-color: var(--dashboard-bg-section);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------------
+   dashboard-chart
+   ------------------------------------------------------------------------- */
+
+.dashboard-chart {
+  width: 100%;
+  min-height: 160px;
+  overflow-x: auto;
+}
+
+/* -------------------------------------------------------------------------
+   Enlaces del dashboard
+   ------------------------------------------------------------------------- */
+
+.dashboard-link a {
+  color: var(--dashboard-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dashboard-link a:hover,
+.dashboard-link a:focus-visible {
+  text-decoration: underline;
+}
+
+.dashboard-action-link a {
+  display: block;
+  width: 100%;
+  color: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.dashboard-card.is-clickable .dashboard-action-link a:hover {
+  color: var(--dashboard-accent);
+}
+
+/* -------------------------------------------------------------------------
+   RESPONSIVE — alineado con Blocksy: tablet <=999px, móvil <=689px
+   ------------------------------------------------------------------------- */
+
+@media (max-width: 999px) {
+  :root { --dashboard-gap: 16px; }
+
+  .dashboard-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .dashboard-grid--6 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .dashboard-grid--main { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 689px) {
+  .dashboard-grid--4,
+  .dashboard-grid--2,
+  .dashboard-grid--6,
+  .dashboard-grid--main {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-section { padding: 16px; }
+}
+
+/* =========================================================================
+   RECORDS — CAT Dynamic Data Table
+   Bloque PHP: cat/dynamic-table (archivo separado)
+   ========================================================================= */
+
+.cat-data-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--theme-palette-color-8);
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 3px;
+  color: var(--theme-palette-color-4);
+}
+
+.cat-data-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cat-data-table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+}
+
+.cat-data-table th,
+.cat-data-table td {
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--theme-palette-color-5);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cat-data-table th {
+  white-space: nowrap;
+  background: var(--theme-palette-color-6);
+  color: var(--theme-palette-color-4);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.cat-data-table td {
+  color: var(--theme-palette-color-4);
+  font-size: 0.9rem;
+}
+
+.cat-data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cat-data-row--clickable { cursor: pointer; }
+
+.cat-data-row--clickable td {
+  transition: background-color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-data-row--clickable:hover td {
+    background: var(--theme-palette-color-6);
+  }
+}
+
+.cat-data-row--clickable:focus-visible {
+  outline: 2px solid var(--theme-palette-color-1);
+  outline-offset: -2px;
+}
+
+.cat-data-table a {
+  color: var(--theme-palette-color-1);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cat-data-table a:hover,
+.cat-data-table a:focus-visible {
+  text-decoration: underline;
+}
+
+.cat-data-table__image {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 3px;
+}
+
+.cat-data-table__empty {
+  padding: 18px;
+  background: var(--theme-palette-color-6);
+  border: 1px dashed var(--theme-palette-color-5);
+  border-radius: 3px;
+  color: var(--theme-palette-color-4);
+  text-align: center;
+}
+
+@media (max-width: 782px) {
+  .cat-data-table th,
+  .cat-data-table td { padding: 10px 12px; }
+  .cat-data-table th { font-size: 0.64rem; }
+  .cat-data-table td { font-size: 0.84rem; }
+}
+
+/* =========================================================================
+   RECORDS — cabecera con pestañas (cat_view=printers|alerts|loans|sales)
+   ========================================================================= */
+
+.cat-data-view-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 24px;
+  margin: 0 0 24px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--theme-palette-color-5);
+}
+
+.cat-data-view-eyebrow {
+  margin: 0 0 6px;
+  color: var(--theme-palette-color-1);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cat-data-view-title { margin: 0; }
+
+.cat-data-view-description {
+  max-width: 62ch;
+  margin: 7px 0 0;
+  color: var(--theme-palette-color-4);
+}
+
+.cat-data-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cat-data-view-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  color: var(--theme-palette-color-4);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--theme-palette-color-6);
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 3px;
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.cat-data-view-tab:hover,
+.cat-data-view-tab:focus-visible {
+  color: var(--theme-palette-color-1);
+  background: var(--theme-palette-color-8);
+  border-color: var(--theme-palette-color-1);
+}
+
+.cat-data-view-tab.is-active {
+  color: var(--theme-palette-color-8);
+  background: var(--theme-palette-color-1);
+  border-color: var(--theme-palette-color-1);
+}
+
+@media (max-width: 782px) {
+  .cat-data-view-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 16px;
+  }
+  .cat-data-view-tabs { justify-content: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .cat-data-view-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .cat-data-view-tab { width: 100%; }
+}
+
+/* =========================================================================
+   CAT Universal ACF Form — aviso de estado (creado/actualizado/borrado)
+   Se muestra tanto dentro del propio formulario como, vía el filtro
+   the_content de cat-universal-acf-form-block.php, en cualquier otra
+   página a la que "After-create URL" te redirija (por ejemplo Dashboard).
+   ========================================================================= */
+
+.cat-uacf-form__notice {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--theme-palette-color-5);
+  border-radius: 4px;
+  font-size: 0.92rem;
+}
+
+.cat-uacf-form__notice--success {
+  color: var(--theme-palette-color-4);
+  background-color: var(--theme-palette-color-6);
+  border-color: var(--theme-palette-color-1);
+}
+
+.cat-uacf-form__notice--error {
+  color: var(--theme-palette-color-1);
+  background-color: var(--theme-palette-color-6);
+  border-color: var(--theme-palette-color-1);
+}
+
+.cat-uacf-form__notice--warning,
+.cat-uacf-form__notice--info {
+  color: var(--theme-palette-color-4);
+  background-color: var(--theme-palette-color-6);
+  border-color: var(--theme-palette-color-5);
+}
+
+/* -------------------------------------------------------------------------
+   CAT Universal ACF Form — botones de acción (Submit + Delete)
+   Reutilizables: .cat-uacf-btn es la base, .cat-uacf-btn--primary y
+   --secondary son las dos variantes. Ambos botones viven fuera de sus
+   respectivos <form> (ver cat-universal-acf-form-block.php - usan el
+   atributo HTML5 form="..." para enviar el formulario correcto), así que
+   .cat-uacf-form__actions puede alinearlos juntos con flexbox sin pelear
+   con el HTML que genera ACF.
+   ------------------------------------------------------------------------- */
+
+.cat-uacf-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--theme-palette-color-5);
+}
+
+.cat-uacf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 20px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.cat-uacf-btn--primary {
+  color: var(--theme-palette-color-8);
+  background-color: var(--theme-palette-color-1);
+  border-color: var(--theme-palette-color-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-uacf-btn--primary:hover {
+    background-color: var(--theme-palette-color-2);
+    border-color: var(--theme-palette-color-2);
+  }
+}
+
+.cat-uacf-btn--secondary {
+  color: var(--theme-palette-color-1);
+  background-color: transparent;
+  border-color: var(--theme-palette-color-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-uacf-btn--secondary:hover {
+    color: var(--theme-palette-color-8);
+    background-color: var(--theme-palette-color-1);
+  }
+}
+
+.cat-uacf-btn:focus-visible {
+  outline: 2px solid var(--theme-palette-color-1);
+  outline-offset: 2px;
+}
+
+/* ACF's own submit button is suppressed (empty html_submit_button) since
+   cat-uacf-form__actions now renders both buttons itself - hide the empty
+   wrapper ACF still leaves behind. */
+.acf-form-submit {
+  display: none;
+}
+
+/* Carries only hidden inputs now - its visible button lives in
+   cat-uacf-form__actions and targets it via form="...". */
+.cat-uacf-form__delete-form {
+  display: none;
+}

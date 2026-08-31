@@ -1,0 +1,384 @@
+# Universal ACF Form v2.3.0 — installation and usage instructions
+
+File: [`universal-acf-form-block.php`](./universal-acf-form-block.php)
+
+## What changed in v2.3.0 — relational ACF fields get their own Display Mode
+
+Select, Post Object, Relationship, User, and ACF's own Taxonomy field type
+are all still plain **ACF fields**, rendered by Universal ACF Field like
+any other — none of them are routed through Universal Taxonomy Field
+(that block only ever deals with native WordPress taxonomies).
+
+For **Post Object** and **Relationship** fields specifically, Universal
+ACF Field's sidebar now shows two extra controls:
+
+- **Display Mode**: *Native ACF* (ACF's own interface — a warning appears
+  in the editor if the field is a Relationship, since those work best at
+  full width), *Compact Dropdown* (a closed toggle that opens into
+  checkboxes, chips/counter text, and a filter box once there are many
+  options — never a permanently-open `<select multiple size="...">`),
+  *Searchable Dropdown* (type-ahead search, restricted server-side to only
+  the field's own configured post type(s)), or *Checkbox List* (every
+  option always visible — an explicit choice, never the default).
+- **Width Recommendation**: *Automatic* / *Full Width* / *Half Width* — a
+  hint only. The block never imposes columns on its own; size a Columns/
+  Group block accordingly.
+
+Whichever mode is used, **Single vs. Multiple is always read from the ACF
+field's own configuration** (`multiple` for Select/Post Object/User, `max`
+for Relationship, inherently multiple for Checkbox) — never converted
+either way — and every custom control submits values using the exact same
+`acf[field_key]` / `acf[field_key][]` naming ACF's own markup uses, so
+`acf_save_post()`/`acf_validate_save_post()` handle them identically to
+ACF's native UI; nothing extra is needed to convert the submitted value
+back to the Return Format ACF expects (Post Object, Post ID, arrays of
+IDs, arrays of `WP_Post` are all read via ACF's own `get_field()`, which
+already resolves according to each field's configured Return Format).
+
+Every Universal ACF Field wrapper also now carries a generic, type-based
+class — `uacf-field-text`, `uacf-field-select`, `uacf-field-post-object`,
+`uacf-field-relationship`, plus `uacf-field-multiple` when applicable, and
+`uacf-field-width-full`/`uacf-field-width-half` for the width hint above —
+for styling from your own CSS. **Native ACF** mode also self-heals on the
+front end: if ACF's own enhanced UI (select2, the relationship search box)
+fails to initialize for any reason, a small script detects the still-
+visible raw `<select multiple>` and swaps in the same Compact Dropdown
+used elsewhere, built directly from that select's own options — visitors
+never see a bare scrollable multi-select box.
+
+See "Real technical limitations" below for what Compact Dropdown/Checkbox
+List candidate queries do and don't account for (ACF's own admin-
+configured taxonomy/return filters on a Relationship field aren't
+replicated), and for the accessibility note on the fallback detection.
+
+## Where to change how the form LOOKS (read this before touching the file)
+
+The CSS embedded in the snippet (`get_frontend_css()`) is now **functional
+only** — it exists purely to make the taxonomy dropdown behave correctly
+(overlay positioning, scroll on long lists) and nothing else. There is no
+color, font, border, shadow, or width in it on purpose, so nobody is ever
+tempted to open this PHP file to restyle the form — a stray character
+there breaks the whole snippet for the entire site.
+
+To actually design the form, without ever opening this file:
+
+- Select any of the 5 blocks in Gutenberg and use its own **Styles**
+  panel in the sidebar — **Color** (text/background) and **Spacing**
+  (margin/padding) are wired to every block already (see "Assigning a CSS
+  class to each field" below for the full supports list). No code.
+- Give a block an **Additional CSS class(es)** name (Advanced panel) and
+  write the real CSS rule for that class in **Appearance → Customize →
+  Additional CSS**, or in the active theme's own stylesheet. A mistake
+  there can only break how the page *looks* — it can never break the PHP
+  running this system.
+- A developer who genuinely needs to adjust the functional layer itself
+  (e.g. the dropdown's max-height) can do it from **outside** this file
+  via the `uacf_frontend_css` filter, instead of editing `get_frontend_css()`.
+
+## What changed in v2.2.0
+
+- `get_frontend_css()` stripped down to purely functional rules (dropdown
+  positioning/overflow, list stacking) — every color, font, border,
+  shadow, and the `.uacf-form-wrap` width constraint were removed. That
+  width rule also contradicted the requirement that the parent form block
+  must not impose a specific width/color/design of its own.
+- Added the `uacf_frontend_css` filter so the functional CSS can be
+  extended from outside this file if truly needed.
+- Removed a few editor-only/preview-only CSS classes
+  (`.uacf-static-preview`, `.uacf-form-editor-*`) that had no effect
+  anyway: `get_frontend_css()` is only enqueued on the front-end, so
+  styling editor-only markup from there was dead code.
+
+## What changed in v2.1.0 (fixes on top of the v2.0.0 architecture)
+
+- **Block supports now also declared in JS**, not just PHP's
+  `register_block_type()`: all 5 blocks share a `UACF_BLOCK_SUPPORTS`
+  object (`customClassName`, `anchor`, `spacing.margin/padding`,
+  `color.text/background`) in `registerBlockType()`, so the Advanced/
+  Styles controls actually appear in the editor (PHP-side `supports`
+  alone only affects server-side rendering, not the editor UI). The
+  parent form block keeps `html: false` in addition.
+- **Validate before creating.** `process_submission()` no longer calls
+  `wp_insert_post()` and then deletes it again on a validation failure.
+  The order is now: nonce → permissions → Field Key whitelist → required-
+  fields-present check → `acf_validate_save_post()` → **only if valid**,
+  `wp_insert_post()` (create mode) or resolve `edit_id` (edit mode) →
+  `acf_save_post()` → redirect. Nothing is ever created-then-deleted.
+- **Submitted values survive a validation error.** Universal ACF Field
+  now redisplays `$_POST['acf'][$field_key]` (via `wp_unslash()` only —
+  never `sanitize_text_field()` or similar, since that would corrupt
+  array-shaped values like Checkbox/Relationship/Post Object/Select-
+  multiple, or an Image/File field's attachment ID) whenever this
+  request's submission was rejected, instead of falling back to the
+  stored/default value and forcing the user to start over.
+- **Required ACF fields are enforced against the form's actual blocks.**
+  A required field whose Field Key never appears in `$_POST['acf']` — i.e.
+  no Universal ACF Field block was added for it — now blocks creation
+  with a clear error, with documented exceptions for `_code` fields
+  (server-generated) and fields with conditional logic (can't be reliably
+  re-evaluated server-side without duplicating ACF's own engine). The
+  parent block's editor view also shows a best-effort warning listing any
+  required field with no matching block anywhere inside the form yet.
+- **Taxonomy radio buttons get a real "None" option**, checked by default
+  when nothing is selected. Without it, an entirely-unchecked native radio
+  group submits nothing at all, so a previously selected term could never
+  be cleared when editing; the fix guarantees the field is always present
+  in `$_POST`, letting `wp_set_object_terms()` clear the relationship.
+- Minor cleanup: `resolve_edit_context()` now has a single cache-and-
+  return point instead of repeating it per branch.
+
+## What changed in v2.0.0 (breaking architecture change)
+
+v1.x was a single monolithic block: pick a CPT, and it printed every ACF
+field (plus every taxonomy, plus the submit button) automatically, one
+under the other. v2.0.0 replaces that entirely with **5 composable
+blocks** so each field can be positioned, styled and given its own CSS
+class from Gutenberg:
+
+| Block | Role |
+|---|---|
+| **Universal ACF Form** (`uacf/universal-acf-form`) | Container. Opens/closes the single `<form>`. Picks the CPT. Provides it as Block Context to everything inside. |
+| **Universal ACF Field** (`uacf/acf-field`) | Renders exactly one ACF field, chosen by Field Key. |
+| **Universal Taxonomy Field** (`uacf/taxonomy-field`) | Renders exactly one taxonomy's term picker. |
+| **Universal Form Message** (`uacf/form-message`) | Where validation/status messages appear. Optional. |
+| **Universal Submit Button** (`uacf/submit-button`) | The real `<button type="submit">`. |
+
+**This is a replacement, not an addition.** The old monolithic block, its
+`[universal_acf_form]` shortcode, and the old `acf_form()`-based save
+pipeline are gone — there is only one system now, so a form can never be
+saved twice through two different code paths. See "What was replaced"
+below for the full list.
+
+## 1. How to paste it into Code Snippets
+
+1. Copy the **entire** contents of `universal-acf-form-block.php`.
+2. In **Code Snippets → Add New**, paste it and **remove the first line
+   `<?php`** — Code Snippets already treats the editor as PHP.
+3. Set the snippet to **"Run snippet everywhere"** and activate it.
+
+If used as an mu-plugin/plugin file instead, leave the `<?php` tag in.
+
+## 2. Building a form with the new blocks
+
+Example — a form with two columns, a notes field, a category, a message
+area and a submit button, matching the layout from the request:
+
+1. Insert a **Universal ACF Form** block. In its sidebar, pick the
+   **Content type (CPT)**.
+2. Inside it, insert a **Columns** block (a native Gutenberg block — it
+   works because `core/columns`/`core/column` are on the form's allowed
+   inner blocks list, and Block Context flows through them automatically).
+3. In the first **Column**, insert two **Universal ACF Field** blocks; for
+   each, use its own sidebar to pick the ACF **Field** (shown as
+   `Label (field_name)`) — the block stores the **Field Key** internally,
+   never the name.
+4. In the second **Column**, insert another **Universal ACF Field** and a
+   **Universal Taxonomy Field**; pick its **Taxonomy**, **Selection Mode**
+   and **Display Style** in the sidebar.
+5. Below the Columns block (still inside the form), insert one more
+   **Universal ACF Field**, a **Universal Form Message**, and a
+   **Universal Submit Button**.
+6. Publish/update the page. On the front-end you get one `<form
+   method="post" enctype="multipart/form-data">` containing only the
+   fields you placed, wherever you placed them — nested inside Columns,
+   Group, Row, Stack (all of which are just `core/group`/`core/columns`
+   under the hood) or not.
+
+`?edit_id=123` in the URL still switches the whole form to edit mode
+(subject to the same permission checks as before): every Universal ACF
+Field and Universal Taxonomy Field block on the page automatically loads
+that record's current values.
+
+## 3. Assigning a CSS class to each field
+
+Every block (form, field, taxonomy field, message, submit button) supports
+`customClassName`, so select any of them and, in the sidebar, open
+**Advanced → Additional CSS class(es)** and type a class name — it's added
+to that field's own wrapper `<div>` (via WordPress's real
+`get_block_wrapper_attributes()` API), independently of every other field.
+The same panel also exposes **spacing** (margin/padding) and **color**
+(text/background) controls per block, and the form/field/message/button
+blocks additionally support **anchor** (an HTML `id`).
+
+Every Universal ACF Field's own wrapper also automatically carries a
+generic, type-based class you can target from your own CSS without adding
+anything manually: `uacf-field-text`, `uacf-field-select`,
+`uacf-field-post-object`, `uacf-field-relationship`, etc. (derived from
+the field's own ACF type), plus `uacf-field-multiple` when the field is
+multi-value and `uacf-field-width-full`/`uacf-field-width-half` when a
+Width Recommendation is set. None of these impose an actual width or
+layout — sizing stays entirely up to Columns/Group blocks and your CSS.
+
+## 4. Taxonomy picker: Selection Mode × Display Style
+
+Configured independently in the Universal Taxonomy Field's sidebar. Only
+the 4 combinations below are offered (the Display Style options shown
+change based on the Selection Mode, so nonsensical combos like
+"Single + Checkboxes" simply aren't selectable):
+
+| Selection Mode | Display Style | Renders |
+|---|---|---|
+| Single (default) | Dropdown (default) | A plain, closed `<select name="uacf_tax_X">` |
+| Single | Radio Buttons | Radio inputs, one shared `name`, no `[]` |
+| Multiple | Checkboxes | A plain, always-visible checkbox list, `name="uacf_tax_X_multi[]"` |
+| Multiple | Dropdown | A closed toggle button + panel of real checkboxes (see below) |
+
+**No `<select multiple>` is used anywhere** — a fully custom, dependency-
+free widget replaces it for "Multiple + Dropdown":
+
+- The panel of checkboxes is **plain, always-visible HTML** on first
+  render (no `hidden` attribute server-side) — fully usable even if
+  JavaScript never loads.
+- A small inline script (no external library, no CDN) then, on page load,
+  hides the panel and turns the wrapper into an accessible disclosure:
+  a real `<button type="button">` toggles it, `aria-expanded` is kept in
+  sync, the panel closes on outside click and on <kbd>Escape</kbd>
+  (returning focus to the button), and keyboard users can Tab into the
+  checkboxes normally once the panel is open.
+- The toggle button's text shows "Select…" (no selection), the single
+  term's name (one selected), or "N terms selected" (several) — computed
+  live from which checkboxes are checked.
+- The checkboxes are always real `<input type="checkbox">` elements with
+  `name="...[]"`, so the browser submits real term IDs regardless of
+  whether the JS ran; every submitted ID is validated with `term_exists()`
+  before saving.
+
+## 5. How discovery still works (unchanged principles)
+
+CPTs, ACF field groups/fields, and taxonomies are still discovered
+automatically from WordPress/ACF (`get_post_types()`,
+`acf_get_field_groups()`, `acf_get_fields()`,
+`get_object_taxonomies()` filtered by `cap->assign_terms`) — no CPT,
+field, or taxonomy name is hardcoded anywhere. A **Universal ACF Field**
+block's Field picker and a **Universal Taxonomy Field** block's Taxonomy
+picker are populated from exactly this discovery, scoped to whatever CPT
+the block's Block Context resolves to.
+
+## 6. How saving works now (no more `acf_form()`)
+
+`acf_form()` always prints every field of the groups you hand it — the
+opposite of what this architecture needs — so it is no longer called at
+all. Instead, `process_submission()` (run on the `wp` hook, before any
+HTML output) drives ACF's own **lower-level, real APIs** directly:
+
+1. Verify nonce, logged-in user, CPT whitelist, and the CPT's native
+   `create_posts`/`edit_post` capability — **before** touching anything.
+2. Restrict `$_POST['acf']` to Field Keys that genuinely belong to the
+   submitted CPT's discovered fields (`get_field_by_key()`) — a Field Key
+   belonging to a different CPT is silently dropped here, so it can never
+   be saved, regardless of what was rendered or forged.
+3. Create the post (`wp_insert_post()`, create mode) or use the already-
+   validated `edit_id` (edit mode).
+4. `acf_validate_save_post( false )` — ACF's own real validation function,
+   working correctly against a **partial** set of fields (exactly the ones
+   actually placed as blocks). On failure: a freshly-created post is
+   deleted, errors are collected and shown by the Universal Form Message
+   block (or the form's own fallback notice if that block wasn't added).
+5. `acf_save_post( $post_id )` — ACF's own real save function. Because
+   it's the exact same core function `acf_form()` itself calls, it fires
+   `'acf/save_post'` exactly as before, so this system's own code (and
+   any third-party plugin's callback on that action) keeps working.
+6. The `'acf/save_post'` hook still runs the code/title/taxonomy logic
+   (generation of the `_code` field, title derivation, taxonomy saving) —
+   unchanged from before.
+7. **Redirect.** `process_submission()` now knows the real `$post_id`
+   directly (it created it, or received it as `edit_id`), so it builds the
+   redirect URL immediately, no placeholder needed. The `wp_safe_redirect()`
+   + `exit` call happens **after** `acf_save_post()` has fully returned —
+   i.e. outside of the `'acf/save_post'` action — so it never cuts off a
+   later-priority callback on that hook, exactly as required.
+
+Individual fields are rendered with ACF's own real per-field API:
+`acf_get_field()`-equivalent lookup (via the cached field list),
+`acf_get_value( $post_id, $field )` to load the current value, and
+`acf_render_field_wrap( $field )` — the same internal function ACF's own
+admin screens and `acf_form()` use to render one field's label,
+instructions, required marker, conditional-logic markup and input,
+respecting every native ACF setting (choices, return format, min/max,
+multiple, uploader, Relationship/Post Object/Select/Checkbox/Radio/
+Date/Number/URL/Email/Text/Text Area, etc.) — no field type is ever hand-
+built as a raw `<input>`.
+
+## 7. Security (unchanged guarantees, now enforced earlier)
+
+Authenticated user, nonce, `create_posts`, `publish_posts` (only if
+requested `publish` and the user actually has that capability — otherwise
+forced to `draft`), `edit_post`, `assign_terms`, CPT whitelist, automatic
+code generation with duplicate prevention, automatic title derivation, and
+recursion prevention are all unchanged in behavior. **New**: Field Key
+whitelisting (a submitted Field Key belonging to another CPT is stripped
+before ACF ever sees it) and the same for taxonomies (a taxonomy the
+current user can't `assign_terms` on is never rendered nor saved, and only
+taxonomies whose Universal Taxonomy Field block was actually placed are
+ever processed at all).
+
+## 8. What was replaced
+
+- The v1.x monolithic `uacf/universal-acf-form` block that auto-rendered
+  every field — **replaced** by the 5-block system above. The block name
+  itself is reused for the new parent/container block, so existing
+  content keeps a valid `postType` attribute, but its form body will be
+  empty until you manually add child blocks inside it (there was nothing
+  to auto-migrate: v1.x never stored individual field placement).
+- The `[universal_acf_form post_type="..."]` shortcode — **removed**. A
+  shortcode cannot represent arbitrary nested block composition, so
+  keeping it would have meant a second, parallel way to submit the same
+  form; the request explicitly asked to avoid that.
+- `acf_form()` / `acf_form_head()`'s automatic submission handling —
+  **replaced** by `process_submission()` calling ACF's own
+  `acf_validate_save_post()` / `acf_save_post()` directly (see section 6).
+  `acf_form_head()` is still called (for its front-end asset-enqueuing
+  role only).
+- The `%post_id%` return placeholder — **replaced** by a direct redirect
+  URL, since the real post ID is now known immediately (see section 6,
+  step 7).
+- `<select multiple size="...">` for taxonomies — **replaced** by the
+  accessible custom dropdown widget described in section 4.
+
+## 9. Real technical limitations
+
+- **Block Context cannot carry a value computed inside a render_callback**
+  — only a parent block's own *attribute* (e.g. `postType`). The resolved
+  create/edit mode and the resolved post ID are **not** passed via Block
+  Context (there is no real Gutenberg API to do that); instead, every
+  block that needs them calls the same cached `resolve_edit_context()`
+  helper, which independently re-derives them from the same sanitized
+  `?edit_id=` + permission checks used everywhere else. This is a
+  documented, deliberate design choice, not an oversight — Block Context
+  is used for the one thing it can correctly carry (`uacf/postType`).
+- **ACF Free vs. Pro**: Repeater, Flexible Content, Gallery, Clone, and
+  options pages remain out of scope (ACF Pro-only), same as before.
+- **Conditional Logic** depends on ACF's front-end JS finding both the
+  triggering and the dependent field's markup inside the same `<form>` in
+  the DOM. If a conditionally-dependent field's Universal ACF Field block
+  is never added to the page, its condition simply has nothing to react
+  to — this is a natural consequence of letting you omit fields, not a
+  bug to work around.
+- **Editor preview is always static** for every block (no
+  `ServerSideRender`, no REST render of any block, and the parent block's
+  own `render_callback` returns a static preview if it's ever hit through
+  `REST_REQUEST`) — exactly to prevent ACF's own front-end validation from
+  ever running inside the editor and blocking page publishing.
+- **Orphaned field/taxonomy blocks**: if a Universal ACF Field or
+  Universal Taxonomy Field block is placed outside of a Universal ACF Form
+  block, it renders a small notice instead of a field ("This field must be
+  placed inside a Universal ACF Form block") rather than crashing.
+- **Full-page caching**: as before, exclude pages containing these blocks
+  from full-page cache for logged-in users.
+- **Compact Dropdown / Checkbox List candidate lists** for Post Object/
+  Relationship fields respect the field's own configured post type(s) and
+  post `perm => 'readable'` visibility, but do **not** replicate any
+  further admin-configured Relationship field restrictions (e.g. a
+  taxonomy filter set on the field itself in ACF) — they list every
+  published, readable post of the allowed type(s), capped at 200. The
+  Searchable Dropdown's live AJAX search is capped at 20 results per query
+  and only ever searches by title.
+- **Searchable Dropdown's chip removal** relies on JavaScript; without it,
+  the field still submits whatever hidden inputs were server-rendered for
+  the record's existing selections (safe, just not editable that request).
+- **Native ACF fallback detection** is a best-effort front-end check (does
+  ACF's own raw `<select multiple>` still look un-enhanced after a short
+  delay) — it cannot detect every possible partial-failure mode of ACF's
+  own JS, only the specific "select2/relationship UI never took over at
+  all" case, which is the one that would otherwise leave a bare scrollable
+  multi-select box visible.
