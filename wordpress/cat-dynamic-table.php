@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'CAT_Dynamic_Data_Table' ) ) {
 	final class CAT_Dynamic_Data_Table {
 		const BLOCK_NAME = 'cat/dynamic-table';
-		const VERSION    = '1.1.0';
+		const VERSION    = '1.2.0';
 
 		public static function init() {
 			add_action( 'init', array( __CLASS__, 'register_block' ), 30 );
@@ -29,14 +29,27 @@ if ( ! class_exists( 'CAT_Dynamic_Data_Table' ) ) {
 					'api_version'     => 2,
 					'render_callback' => array( __CLASS__, 'render_block' ),
 					'attributes'      => array(
-						'postType'       => array( 'type' => 'string', 'default' => 'equipment' ),
-						'fields'         => array( 'type' => 'array', 'default' => array( 'post_title' ) ),
-						'postsPerPage'   => array( 'type' => 'number', 'default' => 20 ),
-						'orderBy'        => array( 'type' => 'string', 'default' => 'title' ),
-						'order'          => array( 'type' => 'string', 'default' => 'ASC' ),
-						'rowAction'      => array( 'type' => 'string', 'default' => 'view' ),
-						'emptyMessage'   => array( 'type' => 'string', 'default' => 'No records found.' ),
-						'showTableHead'  => array( 'type' => 'boolean', 'default' => true ),
+						'postType'         => array( 'type' => 'string', 'default' => 'equipment' ),
+						'fields'           => array( 'type' => 'array', 'default' => array( 'post_title' ) ),
+						'postsPerPage'     => array( 'type' => 'number', 'default' => 20 ),
+						'orderBy'          => array( 'type' => 'string', 'default' => 'title' ),
+						'order'            => array( 'type' => 'string', 'default' => 'ASC' ),
+						'rowAction'        => array( 'type' => 'string', 'default' => 'view' ),
+						'emptyMessage'     => array( 'type' => 'string', 'default' => 'No records found.' ),
+						'showTableHead'    => array( 'type' => 'boolean', 'default' => true ),
+						// Records page (cat_view tabs) usage: leave true, unchanged.
+						// A plain reusable table elsewhere (e.g. under the
+						// Universal ACF Form on /manage-record/): set false, or
+						// get_requested_preset() will always force one of the 4
+						// fixed views regardless of postType/followUrlEntity.
+						'useViewPresets'   => array( 'type' => 'boolean', 'default' => true ),
+						// When useViewPresets is false: follow ?entity=... from
+						// the URL (same parameter cat-universal-acf-form-block.php
+						// reads) instead of the fixed postType attribute, so one
+						// table instance tracks whichever entity the form above
+						// it is currently managing.
+						'followUrlEntity'  => array( 'type' => 'boolean', 'default' => false ),
+						'entityParameter'  => array( 'type' => 'string', 'default' => 'entity' ),
 					),
 				)
 			);
@@ -93,6 +106,26 @@ if ( ! class_exists( 'CAT_Dynamic_Data_Table' ) ) {
 					'content'     => '<!-- wp:cat/dynamic-table {"postType":"equipment","fields":["post_title"],"postsPerPage":20,"rowAction":"view"} /-->',
 				)
 			);
+		}
+
+		/**
+		 * Reads ?entity=... (parameter name configurable via the
+		 * entityParameter attribute) and returns it only if it's one of the
+		 * same manageable post types get_post_type_settings() already
+		 * exposes - reusing that list instead of re-deriving the exclusion
+		 * rules keeps this in sync with the editor's own Content Type
+		 * picker automatically.
+		 */
+		private static function get_url_entity( $attributes ) {
+			$parameter = ! empty( $attributes['entityParameter'] ) ? sanitize_key( $attributes['entityParameter'] ) : 'entity';
+
+			if ( ! isset( $_GET[ $parameter ] ) ) {
+				return '';
+			}
+
+			$candidate = sanitize_key( wp_unslash( $_GET[ $parameter ] ) );
+
+			return array_key_exists( $candidate, self::get_post_type_settings() ) ? $candidate : '';
 		}
 
 		private static function get_post_type_settings() {
@@ -191,11 +224,20 @@ if ( ! class_exists( 'CAT_Dynamic_Data_Table' ) ) {
 		}
 
 		public static function render_block( $attributes ) {
-			$preset_key = self::get_requested_preset();
-			$preset     = $preset_key ? self::get_view_presets()[ $preset_key ] : array();
-			$post_type  = $preset
+			$use_presets = ! isset( $attributes['useViewPresets'] ) || (bool) $attributes['useViewPresets'];
+			$preset_key  = $use_presets ? self::get_requested_preset() : '';
+			$preset      = $preset_key ? self::get_view_presets()[ $preset_key ] : array();
+			$post_type   = $preset
 				? $preset['post_type']
 				: ( isset( $attributes['postType'] ) ? sanitize_key( $attributes['postType'] ) : 'equipment' );
+
+			if ( ! $preset && ! empty( $attributes['followUrlEntity'] ) ) {
+				$candidate = self::get_url_entity( $attributes );
+				if ( $candidate ) {
+					$post_type = $candidate;
+				}
+			}
+
 			$object    = get_post_type_object( $post_type );
 
 			if ( ! $object || ! $object->show_ui ) {
@@ -632,7 +674,10 @@ if ( ! class_exists( 'CAT_Dynamic_Data_Table' ) ) {
 			order: { type: 'string', default: 'ASC' },
 			rowAction: { type: 'string', default: 'view' },
 			emptyMessage: { type: 'string', default: 'No records found.' },
-			showTableHead: { type: 'boolean', default: true }
+			showTableHead: { type: 'boolean', default: true },
+			useViewPresets: { type: 'boolean', default: true },
+			followUrlEntity: { type: 'boolean', default: false },
+			entityParameter: { type: 'string', default: 'entity' }
 		},
 		edit: function (props) {
 			var attrs = props.attributes;
@@ -664,9 +709,29 @@ if ( ! class_exists( 'CAT_Dynamic_Data_Table' ) ) {
 
 			return el(Fragment, {},
 				el(InspectorControls, {},
+					el(PanelBody, { title: __('View mode', 'cat'), initialOpen: true },
+						el(ToggleControl, {
+							label: __('Records page tabs (cat_view)', 'cat'),
+							help: __('On: this is one of the 4 fixed Printers/Notifications/Loans/Sales views. Off: a plain table using the settings below - e.g. placed under a Universal ACF Form to list existing records of whatever it’s currently managing.', 'cat'),
+							checked: attrs.useViewPresets,
+							onChange: function (value) { setAttributes({ useViewPresets: value }); }
+						}),
+						!attrs.useViewPresets && el(ToggleControl, {
+							label: __('Follow content type from URL', 'cat'),
+							help: __('Reads ?entity=... from the URL (same parameter the Universal ACF Form block uses) instead of the fixed Content Type below.', 'cat'),
+							checked: attrs.followUrlEntity,
+							onChange: function (value) { setAttributes({ followUrlEntity: value }); }
+						}),
+						!attrs.useViewPresets && attrs.followUrlEntity && el(TextControl, {
+							label: __('Content type URL parameter', 'cat'),
+							value: attrs.entityParameter,
+							onChange: function (value) { setAttributes({ entityParameter: value }); }
+						})
+					),
 					el(PanelBody, { title: __('Data Source', 'cat'), initialOpen: true },
 						el(SelectControl, {
 							label: __('Content Type', 'cat'),
+							help: attrs.followUrlEntity && !attrs.useViewPresets ? __('Fallback only - used when the URL has no recognized ?entity= value.', 'cat') : '',
 							value: attrs.postType,
 							options: postTypeOptions(),
 							onChange: setPostType
