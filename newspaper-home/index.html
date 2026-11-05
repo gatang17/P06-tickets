@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gretel Alvarez Tang — Front Page</title>
+<meta name="description" content="Portfolio of Gretel Alvarez Tang, web designer in Louisville, Kentucky.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Roboto+Slab:wght@500;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FAF0E2; --ink:#1E1E1E; --red:#B21D22; --tint:#E9DCC8; --ink-2:#3A3A3A;
+  --gutter:28px; --side:48px;
+  --mono:'Roboto Mono',ui-monospace,monospace;
+  --slab:'Roboto Slab',Georgia,serif;
+  --serif:'Source Serif 4',Georgia,serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{background:var(--paper)}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);-webkit-font-smoothing:antialiased}
+a{color:var(--ink)}
+a:hover{color:var(--red)}
+:focus-visible{outline:3px solid var(--red);outline-offset:3px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-9999px;top:0;background:var(--ink);color:var(--paper);padding:12px 16px;z-index:10}
+.skip:focus{left:16px;top:16px}
+
+.page{max-width:1440px;margin:0 auto;padding:0 var(--side) 48px}
+.g12{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gutter)}
+.kick{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;margin:0}
+.slab{font-family:var(--slab)}
+.red{color:var(--red)}
+.us{color:var(--red)} /* signature underscore */
+.tap{display:inline-flex;align-items:center;min-height:44px}
+
+/* 1. Dateline */
+.dateline{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 24px;padding:12px 0;border-bottom:1px solid var(--ink)}
+
+/* 2. Masthead (~110px) */
+.masthead{text-align:center;padding:14px 0 10px;border-bottom:6px double var(--ink)}
+.masthead a{text-decoration:none;display:inline-block}
+.masthead h1{margin:0;font-family:'Anton',Impact,sans-serif;font-weight:400;font-size:clamp(34px,4.3vw,62px);line-height:.9;letter-spacing:.01em;text-transform:uppercase}
+.masthead p{margin:6px 0 0;font-family:var(--slab);font-size:17px;font-weight:500;line-height:1.3}
+
+/* 3. Nav */
+.sections{display:flex;flex-wrap:wrap;justify-content:center;gap:0 36px;border-bottom:1px solid var(--ink);font-family:var(--slab);font-size:15px;font-weight:500}
+.sections a{min-height:44px;display:inline-flex;align-items:center;text-decoration:none}
+.sections a[aria-current="page"]{color:var(--red)}
+
+/* 4. Front page */
+.front{padding-top:24px;row-gap:32px}
+.col-l{grid-column:1 / span 3;border-right:1px solid var(--ink);padding-right:var(--gutter);display:flex;flex-direction:column;gap:28px}
+.col-c{grid-column:4 / span 6;display:flex;flex-direction:column;gap:14px;min-width:0}
+.col-r{grid-column:10 / span 3;border-left:1px solid var(--ink);padding-left:var(--gutter);display:flex;flex-direction:column;gap:28px}
+.num{margin:0 0 10px;font-family:var(--slab);font-size:28px;font-weight:800;line-height:1;color:var(--red)}
+
+.toc{list-style:none;margin:0;padding:0;font-size:15px;border-bottom:1px solid var(--ink)}
+.toc li{border-top:1px solid var(--ink)}
+.toc a{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:44px;padding:4px 0;text-decoration:none}
+.bio{background:var(--ink);color:var(--paper);padding:20px}
+.bio .kick{color:#F2B8B0;margin-bottom:10px}
+.bio p.txt{margin:0;font-size:15px;line-height:1.55}
+.bio a{color:var(--paper);margin-top:8px}
+.bio a:focus-visible{outline-color:var(--paper)}
+
+.lead-h{margin:0;font-family:var(--slab);font-size:clamp(32px,3.2vw,46px);line-height:1.05;font-weight:800;letter-spacing:-.015em}
+.lead-h a{text-decoration:none}
+.deck{margin:0;font-family:var(--slab);font-size:17px;line-height:1.4;font-weight:500;color:var(--ink-2)}
+.shot{position:relative;background:var(--tint);overflow:hidden}
+.shot img{display:block;width:100%;height:100%;object-fit:cover}
+.shot .ph{position:absolute;left:12px;bottom:12px}
+.lead-fig{margin:2px 0 0}
+.lead-fig .shot{aspect-ratio:16 / 9}
+.lead-fig figcaption{font-size:13px;font-style:italic;line-height:1.45;padding:8px 0 10px;border-bottom:1px solid var(--ink)}
+.cols2{column-count:2;column-gap:var(--gutter);column-rule:1px solid var(--ink);font-size:16px;line-height:1.6;text-align:justify;hyphens:auto}
+.cols2 p{margin:0 0 12px}
+.cols2 p:last-child{margin-bottom:0}
+.drop{float:left;font-family:var(--slab);font-size:64px;line-height:.8;font-weight:800;padding:6px 8px 0 0;color:var(--red)}
+.more-link{align-self:flex-start;font-family:var(--slab);font-weight:700;font-size:15px;color:var(--red)}
+
+.classified{border:3px solid var(--ink);padding:20px;display:flex;flex-direction:column;gap:10px}
+.classified h2{margin:0;font-family:var(--slab);font-size:28px;line-height:1.05;font-weight:800}
+.classified p.txt{margin:0;font-size:15px;line-height:1.5}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;background:var(--red);color:#fff;text-decoration:none;font-family:var(--slab);font-weight:700;font-size:15px}
+.btn:hover{background:var(--ink);color:#fff}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px 20px;margin-top:4px}
+.actions .tap{font-family:var(--slab);font-weight:700;font-size:15px}
+
+.services{margin:0;border-bottom:1px solid var(--ink)}
+.services div{border-top:1px solid var(--ink);padding:12px 0}
+.services dt{font-family:var(--slab);font-weight:700;font-size:17px;color:var(--red)}
+.services dd{margin:4px 0 0;font-size:14px;line-height:1.5}
+.quote{margin:0;display:flex;flex-direction:column;gap:12px}
+.quote p{margin:0;font-family:var(--slab);font-size:21px;line-height:1.3;font-weight:500;font-style:italic}
+
+/* 5. More work */
+.rule-red{border:0;border-top:4px solid var(--red);margin:40px 0 0}
+.more{padding-top:24px;row-gap:32px}
+.more > .kick{grid-column:1 / -1}
+.story{grid-column:span 4;display:flex;flex-direction:column;gap:10px;min-width:0}
+.story{position:relative}
+.story + .story::before{content:"";position:absolute;top:0;bottom:0;left:calc(var(--gutter) / -2);border-left:1px solid var(--ink)}
+.story h3{margin:0;font-family:var(--slab);font-size:24px;line-height:1.12;font-weight:800}
+.story h3 a{text-decoration:none}
+.story .shot{aspect-ratio:3 / 2}
+.story p.txt{margin:0;font-size:15px;line-height:1.55}
+
+/* 6. Process */
+.process{margin-top:48px;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:24px 0;row-gap:20px}
+.process > .kick{grid-column:1 / span 2;padding-top:6px}
+.steps{grid-column:3 / span 10;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));column-gap:var(--gutter);row-gap:16px;list-style:none;margin:0;padding:0}
+.steps li{display:flex;flex-direction:column;gap:4px}
+.steps .n{font-family:var(--slab);font-weight:800;font-size:22px;color:var(--red)}
+.steps strong{font-family:var(--slab);font-size:16px}
+.steps span:last-child{font-size:14px;line-height:1.45}
+
+/* 7. Footer */
+.foot{margin-top:40px;border-top:6px double var(--ink);padding-top:8px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0 24px}
+.foot nav{display:flex;flex-wrap:wrap;gap:0 20px}
+.foot a{text-decoration:underline;text-underline-offset:3px}
+
+.error{grid-column:1 / -1;border:3px solid var(--red);padding:20px}
+
+/* Responsive */
+@media (max-width:900px){
+  :root{--side:16px}
+  .g12 > *{grid-column:1 / -1 !important}
+  .col-l,.col-r{border:0;padding:0}
+  .col-c{order:-1}
+  .more .story{grid-column:1 / -1}
+  .story + .story::before{display:none}
+  .cols2{column-count:1}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .process > .kick{padding-top:0}
+  .dateline{justify-content:center;text-align:center}
+}
+@media (prefers-reduced-motion:no-preference){a{transition:color .15s}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="page">
+
+  <div class="dateline kick">
+    <span>Louisville, Kentucky</span>
+    <span>Portfolio Edition — <span id="edition"></span></span>
+    <span>Web Design</span>
+  </div>
+
+  <header class="masthead">
+    <a href="index.html" aria-label="Gretel Alvarez Tang, home">
+      <h1>Gretel Alvarez Tang<span class="us" aria-hidden="true">_</span></h1>
+    </a>
+    <p>Websites, designed &amp; built — with an engineer’s eye for structure.</p>
+  </header>
+
+  <nav class="sections" aria-label="Sections">
+    <a href="index.html" aria-current="page">Front Page</a>
+    <a href="projects.html">Work</a>
+    <a href="resume.html">Resume</a>
+    <a href="about.html">About</a>
+    <a href="contact.html">Contact</a>
+  </nav>
+
+  <main id="main">
+    <div class="g12 front">
+
+      <aside class="col-l" aria-label="In this edition and about">
+        <section aria-labelledby="toc-h">
+          <h2 id="toc-h" class="num">01<span aria-hidden="true">_</span> <span class="kick" style="color:var(--ink);vertical-align:middle">In this edition</span></h2>
+          <ol class="toc" id="toc"></ol>
+        </section>
+        <section class="bio" aria-labelledby="bio-h">
+          <h2 id="bio-h" class="kick">About the designer</h2>
+          <p class="txt">Computer engineer and former Oracle DBA turned web designer. Photographer for years. Graduating from JCTC’s Web Design program in December 2026.</p>
+          <a href="about.html" class="kick tap">Full profile →</a>
+        </section>
+      </aside>
+
+      <article class="col-c" id="lead" aria-live="polite"></article>
+
+      <aside class="col-r" aria-label="Classifieds, services and testimonial">
+        <section class="classified" aria-labelledby="cl-h">
+          <p class="kick">Classifieds</p>
+          <h2 id="cl-h">Seeking: a web design role<span class="us" aria-hidden="true">_</span></h2>
+          <p class="txt">Web designer who also builds. WordPress, Webflow and custom code. Bilingual, English and Spanish. Graduating December 2026. Also open to website projects.</p>
+          <div class="actions">
+            <a href="contact.html" class="btn">Get in touch →</a>
+            <a href="resume.html" class="tap">Read the resume</a>
+          </div>
+        </section>
+
+        <section aria-labelledby="sv-h">
+          <h2 id="sv-h" class="num">02<span aria-hidden="true">_</span> <span class="kick" style="color:var(--ink);vertical-align:middle">Services</span></h2>
+          <dl class="services">
+            <div><dt>Web design</dt><dd>UI, responsive layouts and visual systems.</dd></div>
+            <div><dt>Web implementation</dt><dd>Custom code, WordPress and Webflow.</dd></div>
+            <div><dt>UX &amp; site structure</dt><dd>Navigation, content hierarchy and user flows.</dd></div>
+          </dl>
+        </section>
+
+        <figure class="quote" id="quote"></figure>
+      </aside>
+    </div>
+
+    <hr class="rule-red">
+    <section class="g12 more" aria-labelledby="more-h">
+      <h2 id="more-h" class="kick">03<span class="us" aria-hidden="true">_</span> More work</h2>
+      <div id="more" style="display:contents"></div>
+    </section>
+
+    <section class="g12 process" aria-labelledby="pr-h">
+      <h2 id="pr-h" class="kick">04<span class="us" aria-hidden="true">_</span> Process</h2>
+      <ol class="steps">
+        <li><span class="n">01_</span><strong>Discover</strong><span>Goals, audience and content first.</span></li>
+        <li><span class="n">02_</span><strong>Structure</strong><span>Navigation, hierarchy and flows.</span></li>
+        <li><span class="n">03_</span><strong>Design</strong><span>Type, color, layout and behavior.</span></li>
+        <li><span class="n">04_</span><strong>Implement</strong><span>Built on the platform that fits.</span></li>
+        <li><span class="n">05_</span><strong>Refine</strong><span>Tested and polished across devices.</span></li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="foot kick">
+    <span>© <span id="year"></span> Gretel Alvarez Tang</span>
+    <a class="tap" href="mailto:gretelalvareztang@gmail.com" style="text-transform:none;letter-spacing:.02em">gretelalvareztang@gmail.com</a>
+    <nav aria-label="Social">
+      <a class="tap" href="https://www.linkedin.com/" rel="me noopener">LinkedIn</a>
+      <a class="tap" href="https://github.com/gatang17" rel="me noopener">GitHub</a>
+      <a class="tap" href="https://www.figma.com/" rel="me noopener">Figma</a>
+    </nav>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const now = new Date();
+  document.getElementById('edition').textContent =
+    now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  document.getElementById('year').textContent = now.getFullYear();
+
+  // Escape JSON text before putting it into HTML
+  const esc = (s = '') => String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const link = p => p.url || `project.html?id=${encodeURIComponent(p.id)}`;
+
+  // Image with tinted placeholder; if the file is missing the tint + label stay visible
+  const shot = (p, eager) => `
+    <div class="shot">
+      ${p.cover ? `<img src="${esc(p.cover)}" alt="${esc(p.title)} website" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} onerror="this.remove()">` : ''}
+      <span class="ph kick" aria-hidden="true">${esc(p.title)}</span>
+    </div>`;
+
+  function render({ projects = [], testimonials = [] }) {
+    const featured = projects.filter(p => p.featured);
+    const lead = featured.find(p => p.lead) || projects.find(p => p.lead) || featured[0];
+    const rest = featured.filter(p => p !== lead).slice(0, 3);
+    const edition = [lead, ...rest].filter(Boolean);
+
+    // 01_ In this edition
+    document.getElementById('toc').innerHTML = edition.map((p, i) => `
+      <li><a href="${link(p)}"><span>${esc(p.title)}</span><span class="kick">p. ${i + 1}</span></a></li>`).join('');
+
+    // Lead story
+    if (lead) {
+      const paras = [].concat(lead.description || lead.summary || []);
+      const body = paras.map((t, i) => i === 0
+        ? `<p><span class="drop" aria-hidden="true">${esc(t.charAt(0))}</span><span class="sr">${esc(t.charAt(0))}</span>${esc(t.slice(1))}</p>`
+        : `<p>${esc(t)}</p>`).join('');
+      document.getElementById('lead').innerHTML = `
+        <p class="kick red">Lead case study · ${esc([lead.agency || lead.category, lead.year].filter(Boolean).join(' · '))}</p>
+        <h2 class="lead-h"><a href="${link(lead)}">${esc(lead.headline || lead.title)}</a></h2>
+        ${lead.tagline ? `<p class="deck">${esc(lead.tagline)}</p>` : ''}
+        <figure class="lead-fig">
+          ${shot(lead, true)}
+          ${lead.caption ? `<figcaption>${esc(lead.caption)}</figcaption>` : ''}
+        </figure>
+        <p class="kick">By Gretel Alvarez Tang${lead.role ? ', ' + esc(lead.role) : ''}</p>
+        <div class="cols2">${body}</div>
+        <a href="${link(lead)}" class="more-link tap">Continued in the full case study →</a>`;
+    }
+
+    // 03_ More work
+    document.getElementById('more').innerHTML = rest.map(p => `
+      <article class="story">
+        <p class="kick red">${esc([p.category, p.year].filter(Boolean).join(' · '))}</p>
+        <h3><a href="${link(p)}">${esc(p.tagline || p.title)}</a></h3>
+        ${shot(p)}
+        <p class="txt"><strong>${esc(p.title)}.</strong> ${esc(p.summary || '')}</p>
+      </article>`).join('');
+
+    // Testimonial
+    const t = testimonials[0];
+    const q = document.getElementById('quote');
+    if (t) q.innerHTML = `
+      <blockquote style="margin:0"><p>“${esc(t.quote)}”</p></blockquote>
+      <figcaption class="kick">— ${esc([t.author, t.company].filter(Boolean).join(', '))}</figcaption>`;
+    else q.remove();
+  }
+
+  fetch('data/projects.json')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(render)
+    .catch(() => {
+      document.getElementById('lead').innerHTML =
+        '<p class="error">Projects could not be loaded. Open this page through a local server, not as a file.</p>';
+    });
+})();
+</script>
+</body>
+</html>
