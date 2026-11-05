@@ -137,6 +137,106 @@ a:hover{color:var(--red)}
 }
 @media (prefers-reduced-motion:no-preference){a{transition:color .15s}}
 </style>
+<!-- PROJECT DATA: the single source for this page.
+     Google reads it as structured data (schema.org); the script below renders it.
+     Order = position: position 1 is the lead story, the next 3 go to "More work". -->
+<script type="application/ld+json" id="projects-data">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Person",
+      "@id": "#gretel",
+      "name": "Gretel Alvarez Tang",
+      "jobTitle": "Web Designer",
+      "email": "mailto:gretelalvareztang@gmail.com",
+      "address": { "@type": "PostalAddress", "addressLocality": "Louisville", "addressRegion": "KY" },
+      "sameAs": ["https://github.com/gatang17"]
+    },
+    {
+      "@type": "ItemList",
+      "@id": "#projects",
+      "name": "Featured projects",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "item": {
+            "@type": "CreativeWork",
+            "identifier": "uncleboojies",
+            "url": "project.html?id=uncleboojies",
+            "name": "Uncle Boojie’s",
+            "headline": "Five pages, five ways to make content easier to read",
+            "alternativeHeadline": "An editorial page, a long historical post, an eleven-chapter document, the Experience page and a cocktail recipe book — each needed its own answer.",
+            "abstract": "Five pages for a bar website, each with a different kind of content.",
+            "text": "During my internship at Andrew Kung Group, I designed five pages for Uncle Boojie’s website. Each one had a different kind of content, and each one needed its own answer to the same question: how do I make this content easier to read, follow and act on?\n\nOn desktop, a side menu keeps all eleven chapters of a long document one click away; on mobile, the same chapters become an accordion. The Experience page became a card system with a request form that fills itself in.\n\nI worked only with the client’s existing text, documented every decision, and presented versions for approval before building the final one.",
+            "genre": "WordPress (Divi)",
+            "dateCreated": "2026",
+            "producer": { "@type": "Organization", "name": "Andrew Kung Group" },
+            "creator": { "@id": "#gretel" },
+            "creditText": "Gretel Alvarez Tang, Web Design Intern",
+            "image": { "@type": "ImageObject", "contentUrl": "images/ub_0d.png", "caption": "The Uncle Boojie’s website, designed and built in WordPress (Divi) within the site’s existing visual style." }
+          }
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "item": {
+            "@type": "CreativeWork",
+            "identifier": "hiraldo",
+            "url": "project.html?id=hiraldo",
+            "name": "Hiraldo Wood Resin",
+            "alternativeHeadline": "A design library that turns into a quote request",
+            "abstract": "Online store and custom-order flow for a live-edge wood and resin artist.",
+            "genre": "WooCommerce",
+            "dateCreated": "2026",
+            "creator": { "@id": "#gretel" },
+            "image": { "@type": "ImageObject", "contentUrl": "images/hwr_0d.png" }
+          }
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "item": {
+            "@type": "CreativeWork",
+            "identifier": "inventrack",
+            "url": "project.html?id=inventrack",
+            "name": "InvenTrack",
+            "alternativeHeadline": "One system for printers, supplies, sales and loans",
+            "abstract": "An inventory app for the JCTC print lab, planned as connected modules instead of separate tables.",
+            "genre": "Web app",
+            "dateCreated": "2026",
+            "creator": { "@id": "#gretel" },
+            "image": { "@type": "ImageObject", "contentUrl": "images/it_0d.png" }
+          }
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "item": {
+            "@type": "CreativeWork",
+            "identifier": "jgphotography",
+            "url": "project.html?id=jgphotography",
+            "name": "J&G Photography",
+            "alternativeHeadline": "From the gallery to booking, without getting lost",
+            "abstract": "Photography studio website that guides visitors from the gallery to booking.",
+            "genre": "Custom code",
+            "dateCreated": "2025",
+            "creator": { "@id": "#gretel" },
+            "image": { "@type": "ImageObject", "contentUrl": "images/jg_0p.png" }
+          }
+        }
+      ]
+    },
+    {
+      "@type": "Review",
+      "itemReviewed": { "@id": "#gretel" },
+      "reviewBody": "She brings creative ideas, but always with the business goal in mind.",
+      "author": { "@type": "Person", "name": "JL. Cespedes", "affiliation": { "@type": "Organization", "name": "J&G Photography" } }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -252,10 +352,33 @@ a:hover{color:var(--red)}
       <span class="ph kick" aria-hidden="true">${esc(p.title)}</span>
     </div>`;
 
+  // Read the JSON-LD block in <head> (already in the HTML: no fetch, no server)
+  function readData() {
+    const graph = JSON.parse(document.getElementById('projects-data').textContent)['@graph'] || [];
+    const list = graph.find(n => n['@type'] === 'ItemList') || { itemListElement: [] };
+    const projects = list.itemListElement
+      .slice().sort((a, b) => a.position - b.position)
+      .map(({ item: w }) => ({
+        id: w.identifier, url: w.url, title: w.name,
+        headline: w.headline, tagline: w.alternativeHeadline, summary: w.abstract,
+        description: w.text ? w.text.split(/\n\s*\n/) : null,
+        category: w.genre, year: w.dateCreated,
+        agency: w.producer && w.producer.name,
+        role: w.creditText && w.creditText.split(', ').slice(1).join(', '),
+        cover: w.image && w.image.contentUrl, caption: w.image && w.image.caption
+      }));
+    const testimonials = graph.filter(n => n['@type'] === 'Review').map(r => ({
+      quote: r.reviewBody,
+      author: r.author && r.author.name,
+      company: r.author && r.author.affiliation && r.author.affiliation.name
+    }));
+    return { projects, testimonials };
+  }
+
   function render({ projects = [], testimonials = [] }) {
-    const featured = projects.filter(p => p.featured);
-    const lead = featured.find(p => p.lead) || projects.find(p => p.lead) || featured[0];
-    const rest = featured.filter(p => p !== lead).slice(0, 3);
+    // Position 1 is the lead; the next 3 are "More work"
+    const [lead, ...others] = projects;
+    const rest = others.slice(0, 3);
     const edition = [lead, ...rest].filter(Boolean);
 
     // 01_ In this edition
@@ -299,13 +422,13 @@ a:hover{color:var(--red)}
     else q.remove();
   }
 
-  fetch('data/projects.json')
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(render)
-    .catch(() => {
-      document.getElementById('lead').innerHTML =
-        '<p class="error">Projects could not be loaded. Open this page through a local server, not as a file.</p>';
-    });
+  try {
+    render(readData());
+  } catch (e) {
+    document.getElementById('lead').innerHTML =
+      '<p class="error">Projects could not be loaded: check the JSON in the projects-data block.</p>';
+    console.error(e);
+  }
 })();
 </script>
 </body>
